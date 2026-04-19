@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.TetherV01" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.TetherV01.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0F0F0F</item>
+        <!-- Transparent icon so nothing shows natively -->
+        <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+        <item name="postSplashScreenTheme">@style/Theme.TetherV01</item>
+    </style>
+</resources>

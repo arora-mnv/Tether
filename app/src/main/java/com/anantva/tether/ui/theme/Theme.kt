@@ -1,0 +1,41 @@
+package com.anantva.tether.ui.theme
+
+import android.app.Activity
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+
+private val TetherColorScheme = darkColorScheme(
+    primary = BalloonRed,
+    background = SewerBlack,
+    surface = SewerBlack,
+    onPrimary = TetherWhite,
+    onBackground = TetherWhite,
+    onSurface = TetherWhite,
+    error = ErrorRed
+)
+
+@Composable
+fun TetherTheme(
+    content: @Composable () -> Unit
+) {
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            // This makes the top status bar match our Sewer Black theme
+            window.statusBarColor = SewerBlack.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+        }
+    }
+
+    MaterialTheme(
+        colorScheme = TetherColorScheme,
+        typography = TetherTypography,
+        content = content
+    )
+}
