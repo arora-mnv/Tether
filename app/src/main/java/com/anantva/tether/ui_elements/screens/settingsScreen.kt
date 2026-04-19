@@ -76,98 +76,82 @@ fun SettingsScreen(
         )
     }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
             .background(DarkBg)
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "Settings",
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White
-            )
-            Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Settings",
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.White
+        )
 
-            SettingsCard {
-                Text("Goal amount", color = GrimeGrey, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = uiState.savingsGoal,
-                    onValueChange = viewModel::setSavingsGoal,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            SettingsCard {
-                Text("Monthly commitment", color = GrimeGrey, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = uiState.monthlyCommitment,
-                    onValueChange = viewModel::setMonthlyCommitment,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            SettingsCard {
-                ToggleRow(
-                    title = "Already saved this month",
-                    subtitle = "Controls whether this month counts toward goal progress",
-                    checked = uiState.hasSavedCommitment,
-                    onCheckedChange = viewModel::setHasSavedCommitment
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            SettingsCard {
-                ToggleRow(
-                    title = "Cloud storage",
-                    subtitle = "Enable cloud sync (UI only for now)",
-                    checked = uiState.isCloudStorage,
-                    onCheckedChange = viewModel::setCloudStorage
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            SettingsCard {
-                ToggleRow(
-                    title = "Process notifications",
-                    subtitle = "Ignore transaction notifications when off",
-                    checked = uiState.notificationsEnabled,
-                    onCheckedChange = viewModel::setNotificationsEnabled
-                )
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            Button(
-                onClick = { resetDialog = true },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Reset data", fontWeight = FontWeight.Bold)
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            TextButton(
-                onClick = viewModel::logout,
+        SettingsCard {
+            OutlinedTextField(
+                value = uiState.savingsGoal,
+                onValueChange = viewModel::setSavingsGoal,
+                label = { Text("Goal amount", color = GrimeGrey) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Logout", color = Color.White)
-            }
+            )
+        }
+
+        SettingsCard {
+            OutlinedTextField(
+                value = uiState.monthlyCommitment,
+                onValueChange = viewModel::setMonthlyCommitment,
+                label = { Text("Monthly commitment", color = GrimeGrey) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        SettingsCard {
+            ToggleRow(
+                title = "Already saved this month",
+                subtitle = "Controls whether this month counts toward goal progress",
+                checked = uiState.hasSavedCommitment,
+                onCheckedChange = viewModel::setHasSavedCommitment
+            )
+        }
+
+        SettingsCard {
+            ToggleRow(
+                title = "Cloud storage",
+                subtitle = "Enable cloud sync (UI only for now)",
+                checked = uiState.isCloudStorage,
+                onCheckedChange = viewModel::setCloudStorage
+            )
+        }
+
+        SettingsCard {
+            ToggleRow(
+                title = "Process notifications",
+                subtitle = "Ignore transaction notifications when off",
+                checked = uiState.notificationsEnabled,
+                onCheckedChange = viewModel::setNotificationsEnabled
+            )
+        }
+
+        Button(
+            onClick = { resetDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text("Reset data", fontWeight = FontWeight.Bold)
+        }
+
+        TextButton(
+            onClick = viewModel::logout,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Logout", color = Color.White)
         }
     }
 }

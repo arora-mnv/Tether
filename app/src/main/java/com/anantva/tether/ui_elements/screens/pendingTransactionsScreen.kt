@@ -68,6 +68,10 @@ fun PendingTransactionsScreen(
             onSave = { amount, merchant, isDebit ->
                 viewModel.confirmPendingTransaction(editing!!.transactionId, amount, merchant, isDebit)
                 editing = null
+            },
+            onDelete = {
+                viewModel.deleteTransaction(editing!!.transactionId)
+                editing = null
             }
         )
     }
@@ -125,8 +129,7 @@ fun PendingTransactionsScreen(
             items(uiState.transactions, key = { it.transactionId }) { txn ->
                 PendingRow(
                     transaction = txn,
-                    onConfirm = { editing = txn },
-                    onDiscard = { viewModel.discardPendingTransaction(txn.transactionId) }
+                    onClick = { editing = txn }
                 )
             }
         }
@@ -136,8 +139,7 @@ fun PendingTransactionsScreen(
 @Composable
 private fun PendingRow(
     transaction: TransactionEntity,
-    onConfirm: () -> Unit,
-    onDiscard: () -> Unit
+    onClick: () -> Unit
 ) {
     val isDebit = transaction.type == "Expense"
     val amountColor = if (isDebit) TetherRed else CreditGreen
@@ -145,7 +147,7 @@ private fun PendingRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onConfirm),
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = CardBg),
         shape = RoundedCornerShape(16.dp)
     ) {
@@ -178,13 +180,6 @@ private fun PendingRow(
                     color = amountColor,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Discard",
-                    color = TetherRed,
-                    fontSize = 12.sp,
-                    modifier = Modifier.clickable(onClick = onDiscard)
                 )
             }
         }

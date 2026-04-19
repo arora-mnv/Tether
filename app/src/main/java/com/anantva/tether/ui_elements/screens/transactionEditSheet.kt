@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,6 +27,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,11 +56,13 @@ fun TransactionEditSheet(
     initialMerchant: String,
     initialIsDebit: Boolean,
     onDismiss: () -> Unit,
-    onSave: (amount: Double, merchant: String, isDebit: Boolean) -> Unit
+    onSave: (amount: Double, merchant: String, isDebit: Boolean) -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     var amountText by remember { mutableStateOf(initialAmount.takeIf { it > 0 }?.toString() ?: "") }
     var merchantText by remember { mutableStateOf(initialMerchant) }
     var isDebit by remember { mutableStateOf(initialIsDebit) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     val accentColor = if (isDebit) TetherRed else CreditGreen
     val amountValue = amountText.toDoubleOrNull()
@@ -180,26 +184,95 @@ fun TransactionEditSheet(
 
             Spacer(Modifier.height(26.dp))
 
-            Button(
-                onClick = {
-                    val parsedAmount = amountValue ?: return@Button
-                    onSave(parsedAmount, merchantText.trim(), isDebit)
-                },
-                enabled = canSave,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Delete button (only shown when onDelete is provided)
+                if (onDelete != null) {
+                    Button(
+                        onClick = { showDeleteDialog = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = TetherRed)
+                    ) {
+                        Text(
+                            text = "Delete",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                // Save button (green)
+                Button(
+                    onClick = {
+                        val parsedAmount = amountValue ?: return@Button
+                        onSave(parsedAmount, merchantText.trim(), isDebit)
+                    },
+                    enabled = canSave,
+                    modifier = Modifier
+                        .weight(if (onDelete != null) 1f else 1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CreditGreen)
+                ) {
+                    Text(
+                        text = "Save",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = {
                 Text(
-                    text = "Save",
-                    fontSize = 16.sp,
+                    text = "Delete Transaction",
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
-            }
-        }
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to delete this transaction?",
+                    color = GrimeGrey
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete()
+                        showDeleteDialog = false
+                    }
+                ) {
+                    Text(
+                        text = "Delete",
+                        color = TetherRed,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(
+                        text = "Cancel",
+                        color = GrimeGrey,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            },
+            containerColor = CardBg
+        )
     }
 }
 

@@ -110,6 +110,7 @@ fun DashboardScreen(
             onMerchantChange = pendingViewModel::updateMerchant,
             onToggleType     = pendingViewModel::toggleType,
             onConfirm        = pendingViewModel::confirm,
+            onDelete         = pendingViewModel::deleteTransaction,
             onDismiss        = pendingViewModel::snooze
         )
     }
@@ -469,7 +470,7 @@ fun BalloonSection(uiState: DashboardUiState) {
                     Text("Budget blown!", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TetherRed)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Over by ${formatCurrency((uiState.dailySpent - uiState.dailyLimit).coerceAtLeast(0.0))}",
+                        "Over by ${formatCurrency((uiState.dailySpent - uiState.dailyLimit).coerceAtLeast(0))}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = GrimeGrey
                     )
@@ -656,6 +657,12 @@ fun GoalProgressCard(uiState: DashboardUiState) {
         }
     }
 }
+fun formatCurrency(amount: Int): String {
+    val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+    format.maximumFractionDigits = 0
+    return format.format(amount)
+}
+
 fun formatCurrency(amount: Double): String {
     val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
     format.maximumFractionDigits = 0

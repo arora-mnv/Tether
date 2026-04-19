@@ -16,15 +16,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -85,45 +86,47 @@ fun VaultScreen(
             .fillMaxSize()
             .padding(innerPadding)
             .background(DarkBg)
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
         Text(
             text = "Vault",
             style = MaterialTheme.typography.titleLarge,
             color = Color.White
         )
+
         Spacer(Modifier.height(12.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = uiState.filter == TransactionFilter.ALL,
-                    onClick = { viewModel.setFilter(TransactionFilter.ALL) },
-                    label = { Text("All") }
-                )
-                FilterChip(
-                    selected = uiState.filter == TransactionFilter.EXPENSE,
-                    onClick = { viewModel.setFilter(TransactionFilter.EXPENSE) },
-                    label = { Text("Expense") }
-                )
-                FilterChip(
-                    selected = uiState.filter == TransactionFilter.CREDIT,
-                    onClick = { viewModel.setFilter(TransactionFilter.CREDIT) },
-                    label = { Text("Credit") }
-                )
-            }
-
-            SortDropdown(
+            FilterChip(
+                selected = uiState.filter == TransactionFilter.ALL,
+                onClick = { viewModel.setFilter(TransactionFilter.ALL) },
+                label = { Text("All") },
+                modifier = Modifier.height(36.dp)
+            )
+            FilterChip(
+                selected = uiState.filter == TransactionFilter.EXPENSE,
+                onClick = { viewModel.setFilter(TransactionFilter.EXPENSE) },
+                label = { Text("Expense") },
+                modifier = Modifier.height(36.dp)
+            )
+            FilterChip(
+                selected = uiState.filter == TransactionFilter.CREDIT,
+                onClick = { viewModel.setFilter(TransactionFilter.CREDIT) },
+                label = { Text("Credit") },
+                modifier = Modifier.height(36.dp)
+            )
+            Spacer(Modifier.weight(1f))
+            SortChip(
                 value = uiState.sort,
                 onValueChange = viewModel::setSort
             )
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(16.dp))
 
         if (uiState.transactions.isEmpty()) {
             Box(
@@ -143,7 +146,7 @@ fun VaultScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 90.dp)
         ) {
             items(uiState.transactions, key = { it.transactionId }) { txn ->
@@ -156,52 +159,59 @@ fun VaultScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SortDropdown(
+private fun SortChip(
     value: TransactionSort,
     onValueChange: (TransactionSort) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
-    ) {
-        OutlinedTextField(
-            value = when (value) {
-                TransactionSort.DATE_DESC -> "Date (newest)"
-                TransactionSort.DATE_ASC -> "Date (oldest)"
-                TransactionSort.AMOUNT_DESC -> "Amount (high)"
-                TransactionSort.AMOUNT_ASC -> "Amount (low)"
+    val sortLabel = when (value) {
+        TransactionSort.DATE_DESC -> "Newest"
+        TransactionSort.DATE_ASC -> "Oldest"
+        TransactionSort.AMOUNT_DESC -> "Highest"
+        TransactionSort.AMOUNT_ASC -> "Lowest"
+    }
+
+    Box {
+        FilterChip(
+            selected = false,
+            onClick = { expanded = !expanded },
+            label = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(sortLabel)
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
+                    )
+                }
             },
-            onValueChange = {},
-            readOnly = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-            modifier = Modifier
-                .menuAnchor()
-                .size(width = 160.dp, height = 56.dp)
+            modifier = Modifier.height(36.dp)
         )
 
-        ExposedDropdownMenu(
+        DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
             DropdownMenuItem(
-                text = { Text("Date (newest)") },
+                text = { Text("Newest") },
                 onClick = { onValueChange(TransactionSort.DATE_DESC); expanded = false }
             )
             DropdownMenuItem(
-                text = { Text("Date (oldest)") },
+                text = { Text("Oldest") },
                 onClick = { onValueChange(TransactionSort.DATE_ASC); expanded = false }
             )
             DropdownMenuItem(
-                text = { Text("Amount (high)") },
+                text = { Text("Highest") },
                 onClick = { onValueChange(TransactionSort.AMOUNT_DESC); expanded = false }
             )
             DropdownMenuItem(
-                text = { Text("Amount (low)") },
+                text = { Text("Lowest") },
                 onClick = { onValueChange(TransactionSort.AMOUNT_ASC); expanded = false }
             )
         }
@@ -226,7 +236,7 @@ private fun TransactionRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -235,14 +245,14 @@ private fun TransactionRow(
                     text = transaction.merchant,
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     maxLines = 1
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = formatDate(transaction.date),
                     color = GrimeGrey,
-                    fontSize = 12.sp
+                    fontSize = 11.sp
                 )
             }
 
@@ -251,13 +261,13 @@ private fun TransactionRow(
                     text = formatCurrencyVault(transaction.amount),
                     color = amountColor,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 15.sp
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = if (isDebit) "Expense" else "Credit",
-                    color = GrimeGrey,
-                    fontSize = 12.sp
+                    color = GrimeGrey.copy(alpha = 0.7f),
+                    fontSize = 10.sp
                 )
             }
         }

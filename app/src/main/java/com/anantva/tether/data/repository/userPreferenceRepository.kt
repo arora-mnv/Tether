@@ -73,7 +73,8 @@ class UserPreferencesRepository @Inject constructor(
         goal:              String,
         monthlyCommitment: String,
         hasSavedCommitment: Boolean,
-        isCloud:           Boolean
+        isCloud:           Boolean,
+        userName:          String
     ) {
         dataStore.edit { prefs ->
             prefs[PreferencesKeys.CURRENT_BALANCE]    = balance
@@ -82,6 +83,7 @@ class UserPreferencesRepository @Inject constructor(
             prefs[PreferencesKeys.HAS_SAVED_COMMITMENT] = hasSavedCommitment
             prefs[PreferencesKeys.IS_CLOUD_STORAGE]   = isCloud
             prefs[PreferencesKeys.HAS_COMPLETED_SETUP] = true
+            prefs[PreferencesKeys.USER_NAME]          = userName
         }
     }
 

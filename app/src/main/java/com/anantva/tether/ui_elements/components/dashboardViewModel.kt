@@ -21,21 +21,21 @@ import javax.inject.Inject
 
 data class DashboardUiState(
     val isLoading: Boolean          = true,
-    val currentBalance: Double      = 0.0,
-    val savingsGoal: Double         = 0.0,
-    val monthlyCommitment: Double   = 0.0,
+    val currentBalance: Int         = 0,
+    val savingsGoal: Int            = 0,
+    val monthlyCommitment: Int      = 0,
     val streakDays: Int             = 0,
     // Daily limit fields
-    val dailyLimit: Double          = 0.0,
-    val dailySpent: Double          = 0.0,
-    val dailyLimitRemaining: Double = 0.0,
+    val dailyLimit: Int             = 0,
+    val dailySpent: Int             = 0,
+    val dailyLimitRemaining: Int    = 0,
     val isOverLimit: Boolean        = false,
     // Projection fields
     val monthsToGoal: Int           = 0,
     val projectedCompletionDate: String = "",
     // Goal progress
     val goalProgressPct: Float = 0f,
-    val goalRemainingAmount: Double = 0.0,
+    val goalRemainingAmount: Int = 0,
     val isGoalCompleted: Boolean = false
 )
 
@@ -58,12 +58,12 @@ class DashboardViewModel @Inject constructor(
     init { checkAndUpdateStreak() }
 
     private data class BaseInputs(
-        val balance: Double,
-        val goal: Double,
-        val monthlyCommitment: Double,
+        val balance: Int,
+        val goal: Int,
+        val monthlyCommitment: Int,
         val hasSavedCommitment: Boolean,
         val streakDays: Int,
-        val dailyExpenseSpent: Double
+        val dailyExpenseSpent: Int
     )
 
     private val preferenceInputs =
@@ -76,9 +76,9 @@ class DashboardViewModel @Inject constructor(
         ) { balanceStr, goalStr, commitmentStr, hasSavedCommitment, streakDays ->
             Triple(
                 Triple(
-                    balanceStr.toDoubleOrNull() ?: 0.0,
-                    goalStr.toDoubleOrNull() ?: 0.0,
-                    commitmentStr.toDoubleOrNull() ?: 0.0
+                    balanceStr.toIntOrNull() ?: 0,
+                    goalStr.toIntOrNull() ?: 0,
+                    commitmentStr.toIntOrNull() ?: 0
                 ),
                 hasSavedCommitment,
                 streakDays
@@ -98,7 +98,7 @@ class DashboardViewModel @Inject constructor(
                 monthlyCommitment = monthlyCommitment,
                 hasSavedCommitment = hasSavedCommitment,
                 streakDays = streakDays,
-                dailyExpenseSpent = dailyExpenseSpentNullable ?: 0.0
+                dailyExpenseSpent = dailyExpenseSpentNullable ?: 0
             )
         }
 
@@ -107,58 +107,59 @@ class DashboardViewModel @Inject constructor(
             baseInputs,
             tetherRepository.getActiveGoal()
         ) { base, activeGoal ->
-        val dailyLimitResult = calculateDailyLimit(
-            currentBalance = base.balance,
-            monthlyCommitment = base.monthlyCommitment,
-            dailyNetSpent = base.dailyExpenseSpent,
-            date = today
-        )
+            // UseCase is the single source of truth for daily limit calculation
+            val dailyLimitResult = calculateDailyLimit(
+                currentBalance = base.balance,
+                monthlyCommitment = base.monthlyCommitment,
+                spentToday = base.dailyExpenseSpent,
+                currentDate = today
+            )
 
-        // ── Goal Projection ───────────────────────────────────────────
-        // Months to goal = Goal Amount / Monthly Commitment
-        val monthsToGoal = if (base.monthlyCommitment > 0 && base.goal > 0) {
-            (base.goal / base.monthlyCommitment).toInt().coerceAtLeast(1)
-        } else 0
+            // ── Goal Projection ───────────────────────────────────────────
+            // Months to goal = Goal Amount / Monthly Commitment
+            val monthsToGoal = if (base.monthlyCommitment > 0 && base.goal > 0) {
+                (base.goal / base.monthlyCommitment).coerceAtLeast(1)
+            } else 0
 
-        val projectedDate = if (monthsToGoal > 0) {
-            val completionMonth = YearMonth.now().plusMonths(monthsToGoal.toLong())
-            "${completionMonth.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${completionMonth.year}"
-        } else ""
+            val projectedDate = if (monthsToGoal > 0) {
+                val completionMonth = YearMonth.now().plusMonths(monthsToGoal.toLong())
+                "${completionMonth.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${completionMonth.year}"
+            } else ""
 
-        val (progressPct, remaining, completed) =
-            if (activeGoal != null && activeGoal.targetAmount > 0.0 && base.monthlyCommitment > 0.0) {
-            val start = Instant.ofEpochMilli(activeGoal.startDate).atZone(zone).toLocalDate()
-            val monthsElapsed = ChronoUnit.MONTHS.between(YearMonth.from(start), YearMonth.from(today)).coerceAtLeast(0)
-            val savedMonths = monthsElapsed + if (base.hasSavedCommitment) 1 else 0
-            val savedSoFar = savedMonths * base.monthlyCommitment
-            val remainingAmount = (activeGoal.targetAmount - savedSoFar).coerceAtLeast(0.0)
-            val pct = (savedSoFar / activeGoal.targetAmount).toFloat().coerceIn(0f, 1f)
-            Triple(pct, remainingAmount, remainingAmount <= 0.0)
-        } else {
-            Triple(0f, 0.0, false)
-        }
+            val (progressPct, remaining, completed) =
+                if (activeGoal != null && activeGoal.targetAmount > 0 && base.monthlyCommitment > 0) {
+                    val start = Instant.ofEpochMilli(activeGoal.startDate).atZone(zone).toLocalDate()
+                    val monthsElapsed = ChronoUnit.MONTHS.between(YearMonth.from(start), YearMonth.from(today)).coerceAtLeast(0)
+                    val savedMonths = monthsElapsed + if (base.hasSavedCommitment) 1 else 0
+                    val savedSoFar = savedMonths * base.monthlyCommitment
+                    val remainingAmount = (activeGoal.targetAmount - savedSoFar).coerceAtLeast(0.0).toInt()
+                    val pct = (savedSoFar.toFloat() / activeGoal.targetAmount.toFloat()).coerceIn(0f, 1f)
+                    Triple(pct, remainingAmount, remainingAmount <= 0)
+                } else {
+                    Triple(0f, 0, false)
+                }
 
-        if (completed && activeGoal != null && completedGoalId != activeGoal.goalId) {
-            completedGoalId = activeGoal.goalId
-            viewModelScope.launch { tetherRepository.completeGoal(activeGoal.goalId) }
-        }
+            if (completed && activeGoal != null && completedGoalId != activeGoal.goalId) {
+                completedGoalId = activeGoal.goalId
+                viewModelScope.launch { tetherRepository.completeGoal(activeGoal.goalId) }
+            }
 
-        DashboardUiState(
-            isLoading               = false,
-            currentBalance          = base.balance,
-            savingsGoal             = base.goal,
-            monthlyCommitment       = base.monthlyCommitment,
-            streakDays              = base.streakDays,
-            dailyLimit              = dailyLimitResult.dailyLimit,
-            dailySpent              = dailyLimitResult.dailyNetSpent,
-            dailyLimitRemaining     = dailyLimitResult.dailyLimitRemaining,
-            isOverLimit             = dailyLimitResult.isOverLimit,
-            monthsToGoal            = monthsToGoal,
-            projectedCompletionDate = projectedDate,
-            goalProgressPct         = progressPct,
-            goalRemainingAmount     = remaining,
-            isGoalCompleted         = completed
-        )
+            DashboardUiState(
+                isLoading               = false,
+                currentBalance          = base.balance,
+                savingsGoal             = base.goal,
+                monthlyCommitment       = base.monthlyCommitment,
+                streakDays              = base.streakDays,
+                dailyLimit              = dailyLimitResult.dailyLimit,
+                dailySpent              = base.dailyExpenseSpent,
+                dailyLimitRemaining     = dailyLimitResult.remainingToday,
+                isOverLimit             = dailyLimitResult.exceeded,
+                monthsToGoal            = monthsToGoal,
+                projectedCompletionDate = projectedDate,
+                goalProgressPct         = progressPct,
+                goalRemainingAmount     = remaining,
+                isGoalCompleted         = completed
+            )
         }.stateIn(
             scope        = viewModelScope,
             started      = SharingStarted.WhileSubscribed(5000),
@@ -166,42 +167,35 @@ class DashboardViewModel @Inject constructor(
         )
 
     // ─────────────────────────────────────────────
-    // Streak — Option B
+    // Streak Logic
     // ─────────────────────────────────────────────
     private fun checkAndUpdateStreak() {
         viewModelScope.launch {
             val lastCheckEpochDay = preferencesRepository.lastStreakCheckDate.first()
-            val todayEpochDay     = today.toEpochDay()
+            val todayEpochDay = today.toEpochDay()
+            // Update only once per day
             if (lastCheckEpochDay >= todayEpochDay) return@launch
 
-            val yesterday        = today.minusDays(1)
-            val startOfYesterday = yesterday.atStartOfDay(zone).toInstant().toEpochMilli()
-            val endOfYesterday   = startOfToday - 1
-
-            val countYesterday = tetherRepository.getConfirmedTransactionCount(
-                startOfDay = startOfYesterday,
-                endOfDay = endOfYesterday
-            )
-            val spentYesterday = tetherRepository.getExpenseSpentValue(
-                startOfDay = startOfYesterday,
-                endOfDay = endOfYesterday
-            )
-
             val currentStreak = preferencesRepository.streakDays.first()
+            val balance = preferencesRepository.currentBalance.first().toIntOrNull() ?: 0
+            val monthlyCommitment = preferencesRepository.monthlyCommitment.first().toIntOrNull() ?: 0
+            val spentToday = tetherRepository.getExpenseSpentValue(startOfToday, endOfToday)
 
-            val newStreak = if (countYesterday > 0) {
-                val balance           = preferencesRepository.currentBalance.first().toDoubleOrNull() ?: 0.0
-                val monthlyCommitment = preferencesRepository.monthlyCommitment.first().toDoubleOrNull() ?: 0.0
-                val limitYesterday = calculateDailyLimit(
-                    currentBalance = balance,
-                    monthlyCommitment = monthlyCommitment,
-                    dailyNetSpent = 0.0,
-                    date = yesterday
-                ).dailyLimit
+            // Calculate dailyLimit using UseCase
+            val dailyLimitResult = calculateDailyLimit(
+                currentBalance = balance,
+                monthlyCommitment = monthlyCommitment,
+                spentToday = spentToday,
+                currentDate = today
+            )
 
-                if (spentYesterday <= limitYesterday) currentStreak + 1 else 0
+            // If spentToday <= dailyLimit → increase streak
+            // Else → reset streak
+            // Treat null spentToday as 0 (already handled by DAO returning 0)
+            val newStreak = if (spentToday <= dailyLimitResult.dailyLimit) {
+                currentStreak + 1
             } else {
-                currentStreak
+                0
             }
 
             preferencesRepository.updateStreakAndCheckDate(newStreak, todayEpochDay)

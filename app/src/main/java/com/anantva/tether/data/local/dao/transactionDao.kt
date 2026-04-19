@@ -17,7 +17,7 @@ interface TransactionDao {
     @Update
     suspend fun updateTransaction(transaction: TransactionEntity)
 
-    @Query("SELECT * FROM transactions WHERE status = 'PENDING' ORDER BY date ASC")
+    @Query("SELECT * FROM transactions WHERE status = 'PENDING' ORDER BY date DESC")
     fun observePendingTransactions(): Flow<List<TransactionEntity>>
 
     @Query("DELETE FROM transactions WHERE transactionId = :id AND status = 'PENDING'")
@@ -47,25 +47,25 @@ interface TransactionDao {
 
     @Query(
         """
-        SELECT COALESCE(SUM(amount), 0)
+        SELECT COALESCE(CAST(SUM(amount) AS INTEGER), 0)
         FROM transactions
         WHERE status = 'CONFIRMED'
           AND type = 'Expense'
           AND date BETWEEN :startOfDay AND :endOfDay
         """
     )
-    fun observeDailyExpenseSpent(startOfDay: Long, endOfDay: Long): Flow<Double?>
+    fun observeDailyExpenseSpent(startOfDay: Long, endOfDay: Long): Flow<Int?>
 
     @Query(
         """
-        SELECT COALESCE(SUM(amount), 0)
+        SELECT COALESCE(CAST(SUM(amount) AS INTEGER), 0)
         FROM transactions
         WHERE status = 'CONFIRMED'
           AND type = 'Expense'
           AND date BETWEEN :startOfDay AND :endOfDay
         """
     )
-    suspend fun getExpenseSpentValue(startOfDay: Long, endOfDay: Long): Double
+    suspend fun getExpenseSpentValue(startOfDay: Long, endOfDay: Long): Int
 
     @Query(
         """

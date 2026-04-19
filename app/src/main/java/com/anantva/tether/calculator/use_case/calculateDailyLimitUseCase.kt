@@ -5,37 +5,51 @@ import java.time.YearMonth
 import javax.inject.Inject
 
 data class DailyLimitResult(
-    val dailyLimit: Double,
-    val dailyNetSpent: Double,
-    val dailyLimitRemaining: Double,
-    val isOverLimit: Boolean,
-    val daysRemainingInMonth: Int
+    val dailyLimit: Int,
+    val remainingToday: Int,
+    val exceeded: Boolean
 )
 
 class CalculateDailyLimitUseCase @Inject constructor() {
 
     operator fun invoke(
-        currentBalance: Double,
-        monthlyCommitment: Double,
-        dailyNetSpent: Double,
-        date: LocalDate = LocalDate.now()
+        currentBalance: Int,
+        monthlyCommitment: Int,
+        spentToday: Int,
+        currentDate: LocalDate = LocalDate.now()
     ): DailyLimitResult {
-        val month = YearMonth.from(date)
+        // spendable = currentBalance - monthlyCommitment
+        val spendable = currentBalance - monthlyCommitment
+        
+        // If currentBalance is negative → dailyLimit = 0
+        // If spendable is negative → dailyLimit = 0
+        if (currentBalance < 0 || spendable < 0) {
+            val remainingToday = 0 - spentToday
+            return DailyLimitResult(
+                dailyLimit = 0,
+                remainingToday = remainingToday,
+                exceeded = remainingToday < 0
+            )
+        }
+        
+        // remainingDaysInMonth: Include today, ensure minimum value = 1
+        val month = YearMonth.from(currentDate)
         val daysInMonth = month.lengthOfMonth()
-        val daysRemainingInMonth = (daysInMonth - date.dayOfMonth + 1).coerceAtLeast(1)
-
-        val spendablePool = (currentBalance - monthlyCommitment).coerceAtLeast(0.0)
-        val dailyLimit = spendablePool / daysRemainingInMonth
-
-        val remaining = (dailyLimit - dailyNetSpent).coerceAtLeast(0.0)
-        val isOver = dailyLimit > 0.0 && dailyNetSpent > dailyLimit
-
+        val remainingDaysInMonth = (daysInMonth - currentDate.dayOfMonth + 1).coerceAtLeast(1)
+        
+        // dailyLimit = spendable / remainingDaysInMonth
+        val dailyLimit = spendable / remainingDaysInMonth
+        
+        // remainingToday = dailyLimit - spentToday
+        val remainingToday = dailyLimit - spentToday
+        
+        // exceeded = remainingToday < 0
+        val exceeded = remainingToday < 0
+        
         return DailyLimitResult(
             dailyLimit = dailyLimit,
-            dailyNetSpent = dailyNetSpent,
-            dailyLimitRemaining = remaining,
-            isOverLimit = isOver,
-            daysRemainingInMonth = daysRemainingInMonth
+            remainingToday = remainingToday,
+            exceeded = exceeded
         )
     }
 }

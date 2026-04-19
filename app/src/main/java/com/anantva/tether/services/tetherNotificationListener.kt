@@ -8,6 +8,8 @@ import com.anantva.tether.data.model.TransactionType
 import com.anantva.tether.data.parser.DeduplicationEngine
 import com.anantva.tether.data.parser.TransactionParser
 import com.anantva.tether.data.repository.TetherRepository
+import com.anantva.tether.lifecycle.AppForegroundTracker
+import com.anantva.tether.transactionpopup.PendingSnoozeStore
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +26,9 @@ class TetherNotificationListenerService : NotificationListenerService() {
     @Inject lateinit var dedup:      DeduplicationEngine
     @Inject lateinit var repository: TetherRepository
     @Inject lateinit var preferencesRepository: UserPreferencesRepository
+    @Inject lateinit var appForegroundTracker: AppForegroundTracker
+    @Inject lateinit var pendingTransactionNotificationHelper: PendingTransactionNotificationHelper
+    @Inject lateinit var snoozeStore: PendingSnoozeStore
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -49,18 +54,27 @@ class TetherNotificationListenerService : NotificationListenerService() {
             val parsed = parser.parse(fullText, packageName) ?: return@launch
             if (dedup.isDuplicate(parsed)) return@launch
 
-            // ✅ Save as PENDING immediately
-            repository.addTransaction(
-                TransactionEntity(
-                    transactionId = parsed.detectedAt,
-                    amount        = parsed.amount,
-                    merchant      = parsed.merchant,
-                    type          = if (parsed.type == TransactionType.DEBIT) "Expense" else "Credit",
-                    source        = "Current Balance",
-                    date          = parsed.detectedAt,
-                    status        = "PENDING"  // ✅ Not confirmed yet
-                )
+            // Stage as PENDING in the DB (same table/schema); not counted as confirmed until the user confirms.
+            val transactionId = parsed.detectedAt
+            val entity = TransactionEntity(
+                transactionId = transactionId,
+                amount        = parsed.amount,
+                merchant      = parsed.merchant,
+                type          = if (parsed.type == TransactionType.DEBIT) "Expense" else "Credit",
+                source        = "Notification",
+                date          = parsed.detectedAt,
+                status        = "PENDING"
             )
+            repository.addPendingTransactionFromNotification(entity)
+
+            if (appForegroundTracker.isInForegroundNow()) {
+                // Room → PendingTransactionViewModel shows TransactionConfirmationSheet only.
+                return@launch
+            }
+
+            // Background: notification only; suppress auto bottom sheet for this id until dismiss / foreground / action.
+            snoozeStore.suppressWhileNotificationActive(transactionId)
+            pendingTransactionNotificationHelper.showPendingConfirmation(entity)
         }
     }
 

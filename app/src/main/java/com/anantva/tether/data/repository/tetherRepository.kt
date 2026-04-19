@@ -72,11 +72,11 @@ class TetherRepository(
         return transactionDao.getDailyNetSpent(startOfDay, endOfDay)
     }
 
-    fun observeDailyExpenseSpent(startOfDay: Long, endOfDay: Long): Flow<Double?> {
+    fun observeDailyExpenseSpent(startOfDay: Long, endOfDay: Long): Flow<Int?> {
         return transactionDao.observeDailyExpenseSpent(startOfDay, endOfDay)
     }
 
-    suspend fun getExpenseSpentValue(startOfDay: Long, endOfDay: Long): Double {
+    suspend fun getExpenseSpentValue(startOfDay: Long, endOfDay: Long): Int {
         return transactionDao.getExpenseSpentValue(startOfDay, endOfDay)
     }
 
@@ -92,6 +92,14 @@ class TetherRepository(
         transactionDao.insertTransaction(transaction)
     }
 
+    /**
+     * Inserts a notification-derived row as PENDING only. Confirmed aggregates and history
+     * stay unchanged until [confirmAndUpdateTransaction] runs.
+     */
+    suspend fun addPendingTransactionFromNotification(transaction: TransactionEntity) {
+        transactionDao.insertTransaction(transaction.copy(status = "PENDING"))
+    }
+
     fun observePendingTransactions(): Flow<List<TransactionEntity>> {
         return transactionDao.observePendingTransactions()
     }
@@ -103,6 +111,9 @@ class TetherRepository(
     suspend fun deletePendingTransaction(id: Long) {
         transactionDao.deletePendingTransaction(id)
     }
+
+    suspend fun getTransactionById(id: Long): TransactionEntity? =
+        transactionDao.getTransactionById(id)
 
     suspend fun confirmAndUpdateTransaction(
         id:       Long,

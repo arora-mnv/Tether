@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.repository.TetherRepository
+import com.anantva.tether.transactionpopup.PendingSnoozeStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,7 +25,8 @@ data class PendingTransactionUiState(
 
 @HiltViewModel
 class PendingTransactionViewModel @Inject constructor(
-    private val tetherRepository: TetherRepository
+    private val tetherRepository: TetherRepository,
+    private val snoozeStore: PendingSnoozeStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PendingTransactionUiState())
@@ -32,7 +34,6 @@ class PendingTransactionViewModel @Inject constructor(
 
     private var countdownJob: Job? = null
     private var visiblePendingId: Long? = null
-    private val snoozedIds = mutableSetOf<Long>()
 
     init {
         observePendingTransactions()
@@ -41,7 +42,7 @@ class PendingTransactionViewModel @Inject constructor(
     private fun observePendingTransactions() {
         viewModelScope.launch {
             tetherRepository.observePendingTransactions().collect { pendingList ->
-                val pending = pendingList.firstOrNull { it.transactionId !in snoozedIds }
+                val pending = pendingList.firstOrNull { !snoozeStore.isBlockedFromAutoSheet(it.transactionId) }
                 if (pending == null) {
                     visiblePendingId = null
                     countdownJob?.cancel()
@@ -105,7 +106,7 @@ class PendingTransactionViewModel @Inject constructor(
 
     private fun snoozeCurrent() {
         val id = _uiState.value.id
-        if (id != 0L) snoozedIds.add(id)
+        if (id != 0L) snoozeStore.snoozeUserDismissedSheet(id)
         visiblePendingId = null
         _uiState.value = PendingTransactionUiState()
     }
@@ -119,9 +120,22 @@ class PendingTransactionViewModel @Inject constructor(
                 merchant = state.merchant,
                 type     = if (state.isDebit) "Expense" else "Credit"
             )
-            snoozedIds.remove(state.id)
+            snoozeStore.clearAllForTransaction(state.id)
             visiblePendingId = null
             _uiState.value = PendingTransactionUiState()
+        }
+    }
+
+    fun deleteTransaction() {
+        countdownJob?.cancel()
+        val id = _uiState.value.id
+        if (id != 0L) {
+            viewModelScope.launch {
+                tetherRepository.deletePendingTransaction(id)
+                snoozeStore.clearAllForTransaction(id)
+                visiblePendingId = null
+                _uiState.value = PendingTransactionUiState()
+            }
         }
     }
 }

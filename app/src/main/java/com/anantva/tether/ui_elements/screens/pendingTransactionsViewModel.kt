@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.repository.TetherRepository
+import com.anantva.tether.transactionpopup.PendingSnoozeStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +21,8 @@ data class PendingTransactionsUiState(
 
 @HiltViewModel
 class PendingTransactionsViewModel @Inject constructor(
-    private val tetherRepository: TetherRepository
+    private val tetherRepository: TetherRepository,
+    private val snoozeStore: PendingSnoozeStore
 ) : ViewModel() {
 
     val uiState: StateFlow<PendingTransactionsUiState> =
@@ -45,12 +47,14 @@ class PendingTransactionsViewModel @Inject constructor(
                 merchant = merchant,
                 type = if (isDebit) "Expense" else "Credit"
             )
+            snoozeStore.clearAllForTransaction(id)
         }
     }
 
-    fun discardPendingTransaction(id: Long) {
+    fun deleteTransaction(id: Long) {
         viewModelScope.launch {
             tetherRepository.deletePendingTransaction(id)
+            snoozeStore.clearAllForTransaction(id)
         }
     }
 }

@@ -25,6 +25,9 @@ class SetupViewModel @Inject constructor(
     private val _currentStep = MutableStateFlow(1)
     val currentStep: StateFlow<Int> = _currentStep.asStateFlow()
 
+    private val _userName = MutableStateFlow("")
+    val userName: StateFlow<String> = _userName.asStateFlow()
+
     private val _currentBalance = MutableStateFlow("")
     val currentBalance: StateFlow<String> = _currentBalance.asStateFlow()
 
@@ -47,6 +50,7 @@ class SetupViewModel @Inject constructor(
     private val _setupComplete = MutableStateFlow(false)
     val setupComplete: StateFlow<Boolean> = _setupComplete.asStateFlow()
 
+    fun updateUserName(value: String)         { _userName.value = value }
     fun updateBalance(value: String)          { _currentBalance.value = value }
     fun updateSavingsGoal(value: String)      { _savingsGoal.value = value }
     fun updateMonthlyCommitment(value: Double){
@@ -58,15 +62,15 @@ class SetupViewModel @Inject constructor(
 
     fun nextStep() {
         when {
-            _currentStep.value == 4 && !_isCloudStorage.value -> _currentStep.value = 6
-            _currentStep.value < 6 -> _currentStep.value++
+            _currentStep.value == 5 && !_isCloudStorage.value -> _currentStep.value = 7
+            _currentStep.value < 7 -> _currentStep.value++
             else -> completeSetup()
         }
     }
 
     fun previousStep() {
         when {
-            _currentStep.value == 6 && !_isCloudStorage.value -> _currentStep.value = 4
+            _currentStep.value == 7 && !_isCloudStorage.value -> _currentStep.value = 5
             _currentStep.value > 1 -> _currentStep.value--
         }
     }
@@ -78,7 +82,8 @@ class SetupViewModel @Inject constructor(
                 goal              = _savingsGoal.value,
                 monthlyCommitment = _monthlyCommitment.value.roundToInt().toString(),
                 hasSavedCommitment = _hasSavedCommitment.value,
-                isCloud           = _isCloudStorage.value
+                isCloud           = _isCloudStorage.value,
+                userName          = _userName.value
             )
 
             val goalAmount = _savingsGoal.value.toDoubleOrNull() ?: 0.0

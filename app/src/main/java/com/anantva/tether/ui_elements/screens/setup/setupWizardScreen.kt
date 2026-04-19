@@ -125,6 +125,7 @@ fun SetupWizardScreen(
     onSetupComplete: () -> Unit
 ) {
     val currentStep     by viewModel.currentStep.collectAsState()
+    val name            by viewModel.userName.collectAsState()
     val balance         by viewModel.currentBalance.collectAsState()
     val goal            by viewModel.savingsGoal.collectAsState()
     val commitment by viewModel.monthlyCommitment.collectAsState()
@@ -178,8 +179,8 @@ fun SetupWizardScreen(
         notificationListenerEnabled = isNotificationListenerEnabled(context)
     }
 
-    val totalSteps = if (isCloud) 6f else 5f
-    val visualStep = if (!isCloud && currentStep == 6) 5f else currentStep.toFloat()
+    val totalSteps = if (isCloud) 7f else 6f
+    val visualStep = if (!isCloud && currentStep == 7) 6f else currentStep.toFloat()
 
     Column(
         modifier = Modifier
@@ -212,18 +213,19 @@ fun SetupWizardScreen(
             }, label = "SetupAnimation"
         ) { step ->
             when (step) {
-                1 -> StepInputCard("Current Balance", "How much do you currently have?", balance, viewModel::updateBalance, "₹")
-                2 -> StepInputCard("Savings Goal", "How much do you want to save?", goal, viewModel::updateSavingsGoal, "₹")
-                3 -> StepMonthlyCommitment(
+                1 -> StepInputCard("Your Name", "What should we call you?", name, viewModel::updateUserName, "")
+                2 -> StepInputCard("Current Balance", "How much do you currently have?", balance, viewModel::updateBalance, "₹")
+                3 -> StepInputCard("Savings Goal", "How much do you want to save?", goal, viewModel::updateSavingsGoal, "₹")
+                4 -> StepMonthlyCommitment(
                     savingsGoal        = goal.toDoubleOrNull() ?: 0.0,
                     monthlyCommitment  = commitment,
                     hasSavedCommitment = hasSavedCommitment,
                     onHasSavedChange   = viewModel::setHasSavedCommitment,
                     onCommitmentChange = viewModel::updateMonthlyCommitment
                 )
-                4 -> StepStorageChoice(isCloud, viewModel::setStoragePreference)
-                5 -> StepAuth { viewModel.setAuthenticated(true) }
-                6 -> StepPermissions(
+                5 -> StepStorageChoice(isCloud, viewModel::setStoragePreference)
+                6 -> StepAuth { viewModel.setAuthenticated(true) }
+                7 -> StepPermissions(
                     runtimePermissions          = runtimePermissions,
                     grantedPermissions          = grantedPermissions,
                     notificationListenerEnabled = notificationListenerEnabled,
@@ -250,7 +252,7 @@ fun SetupWizardScreen(
 
             Button(
                 onClick = {
-                    if (currentStep == 6) {
+                    if (currentStep == 7) {
                         when {
                             // ✅ Everything ready — viewModel.nextStep() will be called
                             // automatically by LaunchedEffect, but handle tap too
@@ -278,11 +280,11 @@ fun SetupWizardScreen(
                 },
                 colors  = ButtonDefaults.buttonColors(containerColor = TetherRed),
                 shape   = RoundedCornerShape(12.dp),
-                enabled = isStepValid(currentStep, balance, goal, commitment, isAuthenticated)
+                enabled = isStepValid(currentStep, name, balance, goal, commitment, isAuthenticated)
             ) {
                 Text(
                     when {
-                        currentStep < 6     -> "Next"
+                        currentStep < 7     -> "Next"
                         allPermissionsReady -> "Finish Setup"
                         else                -> "Grant & Continue"
                     }
@@ -528,6 +530,7 @@ internal fun StepPermissions(
         }
     }
 }
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StepMonthlyCommitment(
     savingsGoal:        Double,
@@ -536,10 +539,18 @@ fun StepMonthlyCommitment(
     onHasSavedChange:   (Boolean) -> Unit,
     onCommitmentChange: (Double) -> Unit
 ) {
-    // Slider range: ₹500 → ₹50,000 in steps of ₹500
+    // Slider range: ₹500 → ₹10,000 in steps of ₹500
     val minCommitment = 500f
-    val maxCommitment = 50_000f
+    val maxCommitment = 10_000f
     val steps         = ((maxCommitment - minCommitment) / 500f).toInt() - 1
+
+    // Editable amount text
+    var amountText by remember { mutableStateOf(monthlyCommitment.toInt().toString()) }
+
+    // Sync text when slider changes externally
+    LaunchedEffect(monthlyCommitment) {
+        amountText = monthlyCommitment.toInt().toString()
+    }
 
     // Live projection
     val monthsToGoal = if (monthlyCommitment > 0 && savingsGoal > 0) {
@@ -585,12 +596,33 @@ fun StepMonthlyCommitment(
 
         Spacer(Modifier.height(40.dp))
 
-        // ── Large commitment display ──────────────────────────────────
-        Text(
-            text       = "₹${monthlyCommitment.toInt().formatWithCommas()}",
-            fontSize   = 48.sp,
-            fontWeight = FontWeight.Bold,
-            color      = if (monthlyCommitment > 0) Color.White else Color(0xFF444444)
+        // ── Editable commitment display ──────────────────────────────────
+        OutlinedTextField(
+            value = amountText,
+            onValueChange = { input ->
+                if (input.length <= 6) {
+                    amountText = input
+                    input.toIntOrNull()?.let { value ->
+                        val clamped = value.coerceIn(500, 10000)
+                        onCommitmentChange(clamped.toDouble())
+                    }
+                }
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            textStyle = MaterialTheme.typography.displayMedium.copy(color = Color.White),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = TetherRed,
+                unfocusedBorderColor = Color.Transparent,
+                cursorColor = TetherRed
+            ),
+            prefix = {
+                Text(
+                    text = "₹",
+                    style = MaterialTheme.typography.displayMedium.copy(color = Color.Gray)
+                )
+            },
+            modifier = Modifier.fillMaxWidth(0.8f)
         )
 
         Spacer(Modifier.height(24.dp))
@@ -614,7 +646,7 @@ fun StepMonthlyCommitment(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text("₹500",    style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-            Text("₹50,000", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Text("₹10,000", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
         }
 
         Spacer(Modifier.height(32.dp))
@@ -863,14 +895,15 @@ internal fun RuntimePermissionCard(
 // Validation
 // ─────────────────────────────────────────────
 
-fun isStepValid(step: Int, balance: String, goal: String, commitment: Double, auth: Boolean): Boolean {
+fun isStepValid(step: Int, name: String, balance: String, goal: String, commitment: Double, auth: Boolean): Boolean {
     return when (step) {
-        1    -> balance.isNotBlank()
-        2    -> goal.isNotBlank()
-        3   -> commitment > 0.0
-        4    -> true
-        5    -> auth
-        6    -> true  // button itself handles permission logic
+        1    -> name.isNotBlank()
+        2    -> balance.isNotBlank()
+        3    -> goal.isNotBlank()
+        4    -> commitment > 0.0
+        5    -> true
+        6    -> auth
+        7    -> true  // button itself handles permission logic
         else -> false
     }
 }

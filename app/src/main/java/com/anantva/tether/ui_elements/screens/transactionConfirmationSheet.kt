@@ -39,6 +39,7 @@ fun TransactionConfirmationSheet(
     onMerchantChange:(String) -> Unit,
     onToggleType:    () -> Unit,
     onConfirm:       () -> Unit,
+    onDelete:        () -> Unit,
     onDismiss:       () -> Unit
 ) {
     // Local editable text state — synced to ViewModel on change
@@ -247,7 +248,22 @@ fun TransactionConfirmationSheet(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp))
+
+            // Delete button
+            TextButton(
+                onClick = onDelete,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Delete Transaction",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TetherRed
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
 
             Text(
                 text      = "Hiding in ${state.countdown}s (stays pending until you save)",
