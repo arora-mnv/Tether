@@ -3,7 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.android)     // 2. Must be second to claim the 'kotlin' name
     alias(libs.plugins.kotlin.compose)     // 3. Compose adds to it
     alias(libs.plugins.kotlin.ksp)         // 4. Processing
-    alias(libs.plugins.hilt.android)       // 5. Injection
+    alias(libs.plugins.hilt.android)
+    id("com.google.gms.google-services")// 5. Injection
 }
 android {
     namespace = "com.anantva.tether"
@@ -42,6 +43,10 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+
+//  Firebase
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-auth")
 
     // Hilt
     implementation(libs.hilt.android)
