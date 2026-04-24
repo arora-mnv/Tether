@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">Tether v0.1</string>
+    <string name="app_name">Tether</string>
+    <string name="default_web_client_id">YOUR_DEFAULT_WEB_CLIENT_ID</string>
 </resources>
