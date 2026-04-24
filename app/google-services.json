@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "790264269405",
+    "project_id": "tether-df51f",
+    "storage_bucket": "tether-df51f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:790264269405:android:3bd33cd29ebe109f705bb4",
+        "android_client_info": {
+          "package_name": "com.anantva.tether"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBKDVv0SY5PE5PuwqWzilvDOXlddOSlPEA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
