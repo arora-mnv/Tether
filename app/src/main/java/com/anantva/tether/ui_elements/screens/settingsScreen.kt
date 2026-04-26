@@ -124,9 +124,17 @@ fun SettingsScreen(
         SettingsCard {
             ToggleRow(
                 title = "Cloud storage",
-                subtitle = "Enable cloud sync (UI only for now)",
+                subtitle = "Enable cloud sync (requires login)",
                 checked = uiState.isCloudStorage,
-                onCheckedChange = viewModel::setCloudStorage
+                onCheckedChange = { enabled ->
+                    if (enabled) {
+                        viewModel.setCloudStorage(enabled) {
+                            // onAuthRequired - navigate to auth handled by MainActivity
+                        }
+                    } else {
+                        viewModel.setCloudStorage(false)
+                    }
+                }
             )
         }
 

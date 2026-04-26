@@ -12,6 +12,15 @@ data class TransactionEntity(
     val type:          String,
     val source:        String,
     val date:          Long,
-    // ✅ NEW — "PENDING" until user confirms, "CONFIRMED" after
     val status:        String = "CONFIRMED"
-)
+) {
+    fun toMap(): Map<String, Any> = mapOf(
+        "transactionId" to transactionId,
+        "amount" to amount,
+        "merchant" to merchant,
+        "type" to type,
+        "source" to source,
+        "date" to date,
+        "status" to status
+    )
+}

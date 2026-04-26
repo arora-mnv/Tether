@@ -11,4 +11,12 @@ data class GoalEntity(
     val startDate: Long,
     val endDate: Long,
     val isActive: Boolean
-)
+) {
+    fun toMap(): Map<String, Any> = mapOf(
+        "goalId" to goalId,
+        "targetAmount" to targetAmount,
+        "startDate" to startDate,
+        "endDate" to endDate,
+        "isActive" to isActive
+    )
+}

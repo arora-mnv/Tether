@@ -13,4 +13,14 @@ data class UserProfileEntity(
     val currentBalance: Double,
     val emergencyFundBalance: Double,
     val currentStreak: Int
-)
+) {
+    fun toMap(): Map<String, Any> = mapOf(
+        "uid" to uid,
+        "authProvider" to authProvider,
+        "emailOrPhone" to (emailOrPhone ?: ""),
+        "storagePreference" to storagePreference,
+        "currentBalance" to currentBalance,
+        "emergencyFundBalance" to emergencyFundBalance,
+        "currentStreak" to currentStreak
+    )
+}

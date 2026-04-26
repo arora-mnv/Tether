@@ -2,6 +2,7 @@ package com.anantva.tether.ui_elements.screens
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
 import com.anantva.tether.data.repository.TetherRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,7 +24,8 @@ data class SettingsUiState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
-    private val tetherRepository: TetherRepository
+    private val tetherRepository: TetherRepository,
+    private val authManager: FirebaseAuthManager
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -67,8 +69,23 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setCloudStorage(enabled: Boolean) {
+    fun setCloudStorage(enabled: Boolean, onAuthRequired: () -> Unit = {}) {
         viewModelScope.launch {
+            if (enabled) {
+                // Force login when enabling cloud sync
+                if (!authManager.isLoggedIn()) {
+                    onAuthRequired()
+                    return@launch
+                }
+                // Store userId when enabling
+                authManager.getCurrentUserId()?.let { uid ->
+                    preferencesRepository.updateUserProfile(
+                        name = authManager.getCurrentUserId() ?: "",
+                        email = "",
+                        phone = ""
+                    )
+                }
+            }
             preferencesRepository.setCloudStorageEnabled(enabled)
         }
     }
@@ -89,6 +106,7 @@ class SettingsViewModel @Inject constructor(
 
     fun logout() {
         viewModelScope.launch {
+            authManager.signOut()
             preferencesRepository.setCloudStorageEnabled(false)
             preferencesRepository.updateUserProfile(name = "", email = "", phone = "")
         }
