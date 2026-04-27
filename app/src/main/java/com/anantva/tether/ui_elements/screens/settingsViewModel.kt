@@ -77,14 +77,11 @@ class SettingsViewModel @Inject constructor(
                     onAuthRequired()
                     return@launch
                 }
-                // Store userId when enabling
-                authManager.getCurrentUserId()?.let { uid ->
-                    preferencesRepository.updateUserProfile(
-                        name = authManager.getCurrentUserId() ?: "",
-                        email = "",
-                        phone = ""
-                    )
-                }
+                preferencesRepository.updateUserProfile(
+                    name = authManager.getCurrentUserName().orEmpty(),
+                    email = authManager.getCurrentUserEmail().orEmpty(),
+                    phone = authManager.getCurrentUserPhone().orEmpty()
+                )
             }
             preferencesRepository.setCloudStorageEnabled(enabled)
         }

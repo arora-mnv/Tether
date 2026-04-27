@@ -12,7 +12,20 @@
           "package_name": "com.anantva.tether"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "790264269405-nkefpgl55aqfge1o292ncq4bki7p4b5c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.anantva.tether",
+            "certificate_hash": "a2a63ae0292757834bc33d2fd8452be72d5884d4"
+          }
+        },
+        {
+          "client_id": "790264269405-vsgk3v7kmbt86re0gopkgpbicj73se9g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBKDVv0SY5PE5PuwqWzilvDOXlddOSlPEA"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "790264269405-vsgk3v7kmbt86re0gopkgpbicj73se9g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

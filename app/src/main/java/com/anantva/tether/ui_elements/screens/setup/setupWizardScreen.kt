@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,6 +48,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import com.anantva.tether.ui_elements.screens.AuthScreen
 import com.anantva.tether.ui.theme.GrimeGrey
 import com.anantva.tether.ui.theme.VintageCream
 import java.text.SimpleDateFormat
@@ -143,7 +147,9 @@ fun SetupWizardScreen(
 
     val runtimePermissions = remember { buildRuntimePermissions() }
     val grantedPermissions  = remember { mutableStateMapOf<String, Boolean>() }
-    val allRuntimeGranted   = runtimePermissions.all { grantedPermissions[it.permission] == true }
+    val allRuntimeGranted   by remember(runtimePermissions) {
+        derivedStateOf { runtimePermissions.all { grantedPermissions[it.permission] == true } }
+    }
 
     var notificationListenerEnabled by remember {
         mutableStateOf(isNotificationListenerEnabled(context))
@@ -151,12 +157,26 @@ fun SetupWizardScreen(
 
     val allPermissionsReady = allRuntimeGranted && notificationListenerEnabled
 
+    fun refreshRuntimePermissionState() {
+        runtimePermissions.forEach { perm ->
+            val granted = ContextCompat.checkSelfPermission(context, perm.permission) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            grantedPermissions[perm.permission] = granted
+        }
+    }
+
+    // Initialize runtime permission state on first load
+    LaunchedEffect(runtimePermissions) {
+        refreshRuntimePermissionState()
+    }
+
     // ✅ Fix 1: Re-check notification listener every time the app comes back to foreground
     // This catches the user returning from Settings after enabling it
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 notificationListenerEnabled = isNotificationListenerEnabled(context)
+                refreshRuntimePermissionState()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -166,7 +186,7 @@ fun SetupWizardScreen(
     // ✅ Fix 2: Auto-proceed the moment all permissions are ready
     // User should never need to tap the button again after granting everything
     LaunchedEffect(allPermissionsReady, currentStep) {
-        if (currentStep == 6 && allPermissionsReady) {
+        if (currentStep == 7 && allPermissionsReady) {
             viewModel.nextStep()
         }
     }
@@ -213,7 +233,15 @@ fun SetupWizardScreen(
             }, label = "SetupAnimation"
         ) { step ->
             when (step) {
-                1 -> StepInputCard("Your Name", "What should we call you?", name, viewModel::updateUserName, "")
+                1 -> StepInputCard(
+                    title = "Your Name",
+                    subtitle = "What should we call you?",
+                    value = name,
+                    onValueChange = viewModel::updateUserName,
+                    prefix = "",
+                    keyboardType = KeyboardType.Text,
+                    maxLen = 32
+                )
                 2 -> StepInputCard("Current Balance", "How much do you currently have?", balance, viewModel::updateBalance, "₹")
                 3 -> StepInputCard("Savings Goal", "How much do you want to save?", goal, viewModel::updateSavingsGoal, "₹")
                 4 -> StepMonthlyCommitment(
@@ -224,7 +252,10 @@ fun SetupWizardScreen(
                     onCommitmentChange = viewModel::updateMonthlyCommitment
                 )
                 5 -> StepStorageChoice(isCloud, viewModel::setStoragePreference)
-                6 -> StepAuth { viewModel.setAuthenticated(true) }
+                6 -> StepAuth {
+                    viewModel.setAuthenticated(true)
+                    viewModel.nextStep()
+                }
                 7 -> StepPermissions(
                     runtimePermissions          = runtimePermissions,
                     grantedPermissions          = grantedPermissions,
@@ -305,10 +336,16 @@ fun StepInputCard(
     subtitle: String,
     value: String,
     onValueChange: (String) -> Unit,
-    prefix: String
+    prefix: String,
+    keyboardType: KeyboardType = KeyboardType.Number,
+    maxLen: Int = 8
 ) {
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    // Avoid focus requests racing with AnimatedContent transitions (keyboard jank).
+    LaunchedEffect(title, keyboardType) {
+        withFrameNanos { /* wait one frame */ }
+        focusRequester.requestFocus()
+    }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = title, style = MaterialTheme.typography.titleLarge)
@@ -317,8 +354,11 @@ fun StepInputCard(
         Spacer(modifier = Modifier.height(40.dp))
         OutlinedTextField(
             value           = value,
-            onValueChange   = { if (it.length <= 8) onValueChange(it) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            onValueChange   = { if (it.length <= maxLen) onValueChange(it) },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = keyboardType,
+                imeAction = ImeAction.Done
+            ),
             textStyle       = MaterialTheme.typography.displayLarge.copy(color = Color.White),
             singleLine      = true,
             colors          = OutlinedTextFieldDefaults.colors(
@@ -427,26 +467,10 @@ fun StorageCard(title: String, subtitle: String, isSelected: Boolean, onClick: (
 
 @Composable
 fun StepAuth(onAuthSuccess: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-        Text(text = "Secure Your Data", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(text = "Required for Cloud Sync.", style = MaterialTheme.typography.bodyMedium)
-        Spacer(modifier = Modifier.height(40.dp))
-
-        Button(
-            onClick  = { onAuthSuccess() },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            colors   = ButtonDefaults.buttonColors(containerColor = Color.White)
-        ) { Text("Sign in with Google", color = Color.Black) }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick  = { onAuthSuccess() },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            colors   = ButtonDefaults.buttonColors(containerColor = CardBg)
-        ) { Text("Sign in with Phone", color = Color.White) }
-    }
+    AuthScreen(
+        forceReauth = true,
+        onLoginSuccess = onAuthSuccess
+    )
 }
 
 // ─────────────────────────────────────────────

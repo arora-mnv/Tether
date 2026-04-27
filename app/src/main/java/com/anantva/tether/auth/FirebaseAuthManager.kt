@@ -3,10 +3,15 @@ package com.anantva.tether.auth
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
 import com.google.android.gms.auth.api.signin.*
+import com.google.android.gms.common.api.ApiException
 import com.google.firebase.FirebaseException
 import com.google.firebase.auth.*
 import com.google.firebase.auth.PhoneAuthProvider
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 class FirebaseAuthManager {
@@ -14,8 +19,54 @@ class FirebaseAuthManager {
     private val auth = FirebaseAuth.getInstance()
     private var phoneCallback: PhoneAuthProvider.OnVerificationStateChangedCallbacks? = null
 
+    /**
+     * Useful for debugging the common Google sign-in failure:
+     * ApiException statusCode=10 (DEVELOPER_ERROR) which usually means SHA-1 / package name mismatch
+     * in Firebase or Google Cloud OAuth client.
+     */
+    fun getAppSigningSha1(context: Context): String? {
+        return try {
+            val pkg = context.packageName
+            val pm = context.packageManager
+
+            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES)
+                val signingInfo = info.signingInfo ?: return null
+                val sigs = if (signingInfo.hasMultipleSigners()) {
+                    signingInfo.apkContentsSigners
+                } else {
+                    signingInfo.signingCertificateHistory
+                }
+                sigs.map { it.toByteArray() }
+            } else {
+                @Suppress("DEPRECATION")
+                val info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES)
+                @Suppress("DEPRECATION")
+                info.signatures?.map { it.toByteArray() }.orEmpty()
+            }
+
+            val first = signatures.firstOrNull() ?: return null
+            val md = MessageDigest.getInstance("SHA1")
+            val digest = md.digest(first)
+            digest.joinToString(":") { b -> "%02X".format(b) }
+        } catch (t: Throwable) {
+            Log.w("TetherAuth", "Failed to compute SHA-1", t)
+            null
+        }
+    }
+
+    fun isGoogleSignInConfigured(context: Context): Boolean {
+        val webClientId = context.getString(com.anantva.tether.R.string.default_web_client_id).trim()
+        return webClientId.isNotBlank() && webClientId != "YOUR_DEFAULT_WEB_CLIENT_ID"
+    }
+
     // 🔵 Configure Google Sign-In
     private fun getGoogleClient(context: Context): GoogleSignInClient {
+        if (!isGoogleSignInConfigured(context)) {
+            throw IllegalStateException(
+                "Google sign-in is not configured. Replace default_web_client_id and re-download google-services.json with OAuth clients."
+            )
+        }
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(context.getString(com.anantva.tether.R.string.default_web_client_id))
             .requestEmail()
@@ -30,21 +81,31 @@ class FirebaseAuthManager {
 
     // 🔵 Handle result from launcher
     fun handleGoogleSignInResult(
+        context: Context,
         data: Intent,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
         val task = GoogleSignIn.getSignedInAccountFromIntent(data)
         try {
-            val account = task.result
+            val account = task.getResult(ApiException::class.java)
             val idToken = account.idToken
             if (idToken == null) {
                 onError("Google ID Token is null")
                 return
             }
             firebaseAuthWithGoogle(idToken, onSuccess, onError)
+        } catch (e: ApiException) {
+            // Common: 10 (DEVELOPER_ERROR) when SHA-1/package/oauth is misconfigured
+            val sha1 = getAppSigningSha1(context)
+            val suffix = if (e.statusCode == 10 && !sha1.isNullOrBlank()) {
+                "\n\nFix: add this SHA-1 to Firebase Console -> Project settings -> Your apps -> SHA certificate fingerprints:\n$sha1"
+            } else {
+                ""
+            }
+            onError("Google sign-in failed (code=${e.statusCode}): ${e.message ?: "ApiException"}$suffix")
         } catch (e: Exception) {
-            onError(e.message ?: "Google sign-in failed")
+            onError("Google sign-in failed: ${e.message ?: "Unknown error"}")
         }
     }
 
@@ -133,7 +194,25 @@ class FirebaseAuthManager {
 
     fun getCurrentUserId(): String? = auth.currentUser?.uid
 
+    fun getCurrentUserName(): String? = auth.currentUser?.displayName
+
+    fun getCurrentUserEmail(): String? = auth.currentUser?.email
+
+    fun getCurrentUserPhone(): String? = auth.currentUser?.phoneNumber
+
     fun signOut() {
         auth.signOut()
+    }
+
+    fun signOutGoogle(context: Context) {
+        try {
+            // Use a minimal config; we just want to clear cached account selection.
+            val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .build()
+            GoogleSignIn.getClient(context, options).signOut()
+        } catch (_: Throwable) {
+            // Best-effort only.
+        }
     }
 }

@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.anantva.tether.ui_elements.screens.AuthScreen
 
 private val DarkBg = Color(0xFF0F0F0F)
 private val CardBg = Color(0xFF1A1A1A)
@@ -52,6 +53,19 @@ fun SettingsScreen(
     val context = LocalContext.current
 
     var resetDialog by remember { mutableStateOf(false) }
+    var showAuth by remember { mutableStateOf(false) }
+
+    if (showAuth) {
+        AuthScreen(
+            forceReauth = true,
+            onLoginSuccess = {
+                showAuth = false
+                viewModel.setCloudStorage(true)
+            },
+            onCancel = { showAuth = false }
+        )
+        return
+    }
 
     if (resetDialog) {
         AlertDialog(
@@ -128,9 +142,8 @@ fun SettingsScreen(
                 checked = uiState.isCloudStorage,
                 onCheckedChange = { enabled ->
                     if (enabled) {
-                        viewModel.setCloudStorage(enabled) {
-                            // onAuthRequired - navigate to auth handled by MainActivity
-                        }
+                        // Always require an explicit sign-in so the user can switch accounts.
+                        showAuth = true
                     } else {
                         viewModel.setCloudStorage(false)
                     }
@@ -156,7 +169,11 @@ fun SettingsScreen(
         }
 
         TextButton(
-            onClick = viewModel::logout,
+            onClick = {
+                val wasCloudOn = uiState.isCloudStorage
+                viewModel.logout()
+                if (wasCloudOn) showAuth = true
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Logout", color = Color.White)
