@@ -1,14 +1,17 @@
 package com.anantva.tether.ui_elements.screens
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.repository.TetherRepository
 import com.anantva.tether.transactionpopup.PendingSnoozeStore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,6 +27,9 @@ class PendingTransactionsViewModel @Inject constructor(
     private val tetherRepository: TetherRepository,
     private val snoozeStore: PendingSnoozeStore
 ) : ViewModel() {
+
+    private val _toastEvent = Channel<TransactionToastEvent>(Channel.BUFFERED)
+    val toastEvent = _toastEvent.receiveAsFlow()
 
     val uiState: StateFlow<PendingTransactionsUiState> =
         tetherRepository.observePendingTransactions()
@@ -43,12 +49,13 @@ class PendingTransactionsViewModel @Inject constructor(
         isRecurring: Boolean = false
     ) {
         viewModelScope.launch {
+            Log.d("TetherTxn", "Saving transaction started")
             val txnCategory = if (isRecurring) 
                 com.anantva.tether.data.local.entity.TxnCategory.RECURRING.toDbValue() 
             else 
                 com.anantva.tether.data.local.entity.TxnCategory.NORMAL.toDbValue()
             
-            tetherRepository.confirmAndUpdateTransaction(
+            val success = tetherRepository.confirmAndUpdateTransaction(
                 id = id,
                 amount = amount,
                 merchant = merchant,
@@ -56,6 +63,13 @@ class PendingTransactionsViewModel @Inject constructor(
                 category = category,
                 txnCategory = txnCategory
             )
+            if (success) {
+                Log.d("TetherTxn", "Transaction saved")
+                _toastEvent.send(TransactionToastEvent.Success)
+            } else {
+                Log.e("TetherTxn", "Error")
+                _toastEvent.send(TransactionToastEvent.Failure("Error"))
+            }
             snoozeStore.clearAllForTransaction(id)
         }
     }

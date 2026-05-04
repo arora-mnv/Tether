@@ -12,19 +12,22 @@ import kotlinx.coroutines.flow.Flow
 interface TransactionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertTransaction(transaction: TransactionEntity)
+    suspend fun upsertTransaction(transaction: TransactionEntity)
 
     @Update
     suspend fun updateTransaction(transaction: TransactionEntity)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE transactionId = :id LIMIT 1)")
+    suspend fun exists(id: Long): Boolean
+
+    @Query("SELECT * FROM transactions WHERE transactionId = :id LIMIT 1")
+    suspend fun getTransactionById(id: Long): TransactionEntity?
 
     @Query("SELECT * FROM transactions WHERE status = 'PENDING' ORDER BY date DESC")
     fun observePendingTransactions(): Flow<List<TransactionEntity>>
 
     @Query("DELETE FROM transactions WHERE transactionId = :id AND status = 'PENDING'")
     suspend fun deletePendingTransaction(id: Long)
-
-    @Query("SELECT * FROM transactions WHERE transactionId = :id LIMIT 1")
-    suspend fun getTransactionById(id: Long): TransactionEntity?
 
     @Query(
         """

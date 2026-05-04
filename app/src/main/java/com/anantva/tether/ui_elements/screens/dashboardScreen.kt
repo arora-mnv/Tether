@@ -49,6 +49,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -126,6 +129,28 @@ fun DashboardScreen(
     var showProfile by remember { mutableStateOf(false) }
     val userAvatarId = user?.avatarId ?: "chill_cat"
     val userName = user?.displayName ?: "there"
+
+    val context = LocalContext.current
+
+    LaunchedEffect(manualTxnViewModel) {
+        manualTxnViewModel.toastEvent.collect { event ->
+            val message = when (event) {
+                TransactionToastEvent.Success -> "Transaction saved"
+                is TransactionToastEvent.Failure -> "Failed: ${event.message}"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(pendingViewModel) {
+        pendingViewModel.toastEvent.collect { event ->
+            val message = when (event) {
+                TransactionToastEvent.Success -> "Transaction saved"
+                is TransactionToastEvent.Failure -> "Failed: ${event.message}"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // ✅ Show confirmation sheet whenever a transaction is pending
         if (pendingState.isVisible) {

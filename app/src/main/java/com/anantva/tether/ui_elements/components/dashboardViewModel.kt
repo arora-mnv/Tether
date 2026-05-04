@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.anantva.tether.calculator.use_case.CalculateDailyLimitUseCase
 import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.repository.FirestoreRepository
 import com.anantva.tether.data.repository.TetherRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,7 +44,8 @@ class DashboardViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val tetherRepository: TetherRepository,
     private val calculateDailyLimit: CalculateDailyLimitUseCase,
-    private val userRepository: com.anantva.tether.data.repository.UserRepository
+    private val userRepository: com.anantva.tether.data.repository.UserRepository,
+    private val firestoreRepository: FirestoreRepository
 ) : ViewModel() {
 
     val user = userRepository.user
@@ -57,7 +59,12 @@ class DashboardViewModel @Inject constructor(
     private val endOfToday: Long =
         startOfToday + 24L * 60 * 60 * 1000 - 1
 
-    init { checkAndUpdateStreak() }
+    init {
+        checkAndUpdateStreak()
+        viewModelScope.launch {
+            firestoreRepository.testFirestoreWrite()
+        }
+    }
 
     private data class BaseInputs(
         val balance: Int,

@@ -29,8 +29,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +64,17 @@ fun PendingTransactionsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var editing by remember { mutableStateOf<TransactionEntity?>(null) }
+
+    val context = LocalContext.current
+    LaunchedEffect(viewModel) {
+        viewModel.toastEvent.collect { event ->
+            val message = when (event) {
+                TransactionToastEvent.Success -> "Transaction saved"
+                is TransactionToastEvent.Failure -> "Failed: ${event.message}"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     if (editing != null) {
         TransactionEditSheet(
