@@ -29,4 +29,10 @@ interface GoalDao {
 
     @Query("UPDATE goals SET targetAmount = :targetAmount WHERE isActive = 1")
     suspend fun updateActiveGoalTarget(targetAmount: Double)
+
+    @Query("SELECT * FROM goals")
+    suspend fun getAllGoals(): List<GoalEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertGoal(goal: GoalEntity)
 }

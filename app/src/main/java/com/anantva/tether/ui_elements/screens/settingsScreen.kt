@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -25,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,7 +38,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.anantva.tether.data.repository.SyncResult
 import com.anantva.tether.ui_elements.screens.AuthScreen
 
 private val DarkBg = Color(0xFF0F0F0F)
@@ -50,10 +54,19 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val syncState by viewModel.syncState.collectAsState()
     val context = LocalContext.current
 
     var resetDialog by remember { mutableStateOf(false) }
     var showAuth by remember { mutableStateOf(false) }
+
+    // Clear sync state when user leaves sync section
+    LaunchedEffect(syncState) {
+        if (syncState is SyncResult.Done || syncState is SyncResult.Error) {
+            kotlinx.coroutines.delay(3000)
+            viewModel.clearSyncState()
+        }
+    }
 
     if (showAuth) {
         AuthScreen(
@@ -140,19 +153,44 @@ fun SettingsScreen(
         }
 
         SettingsCard {
-            ToggleRow(
-                title = "Cloud storage",
-                subtitle = "Enable cloud sync (requires login)",
-                checked = uiState.isCloudStorage,
-                onCheckedChange = { enabled ->
-                    if (enabled) {
-                        // Always require an explicit sign-in so the user can switch accounts.
-                        showAuth = true
-                    } else {
-                        viewModel.setCloudStorage(false)
+            Column {
+                val subtitleText = when (val state = syncState) {
+                    is SyncResult.Syncing -> state.message
+                    is SyncResult.Done -> state.message
+                    is SyncResult.Error -> state.message
+                    else -> "Enable cloud sync (requires login)"
+                }
+                ToggleRow(
+                    title = "Cloud storage",
+                    subtitle = subtitleText,
+                    checked = uiState.isCloudStorage,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            showAuth = true
+                        } else {
+                            viewModel.setCloudStorage(false)
+                        }
+                    }
+                )
+                // Show progress indicator during sync
+                if (syncState is SyncResult.Syncing) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                        Text(
+                            text = (syncState as SyncResult.Syncing).message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GrimeGrey
+                        )
                     }
                 }
-            )
+            }
         }
 
         SettingsCard {

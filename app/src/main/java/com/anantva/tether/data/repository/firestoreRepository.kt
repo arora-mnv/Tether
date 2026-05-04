@@ -1,6 +1,7 @@
 package com.anantva.tether.data.repository
 
 import android.util.Log
+import com.anantva.tether.data.local.entity.GoalEntity
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.FieldValue
@@ -22,6 +23,12 @@ class FirestoreRepository @Inject constructor() {
 
     private fun userTransactionsRef(userId: String) =
         firestore.collection("users").document(userId).collection("transactions")
+
+    private fun userGoalsRef(userId: String) =
+        firestore.collection("users").document(userId).collection("goals")
+
+    private fun userPreferencesRef(userId: String) =
+        firestore.collection("users").document(userId).collection("preferences")
 
     suspend fun saveTransaction(userId: String, transaction: TransactionEntity): Boolean {
         return try {
@@ -132,6 +139,159 @@ class FirestoreRepository @Inject constructor() {
         } catch (e: Exception) {
             Log.e(TAG, "getTransactionsOrNull error for uid=$userId: ${e.message}")
             null
+        }
+    }
+
+    // ── Goal methods ──
+
+    suspend fun saveGoal(userId: String, goal: GoalEntity): Boolean {
+        return try {
+            Log.d("TetherGoal", "Saving goal started")
+            userGoalsRef(userId)
+                .document(goal.goalId.toString())
+                .set(goal.toMap())
+                .await()
+            Log.d("TetherGoal", "Goal saved")
+            true
+        } catch (e: FirebaseFirestoreException) {
+            val msg = e.message ?: ""
+            if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("offline", ignoreCase = true)) {
+                Log.e(TAG, "Firestore error: $msg")
+            } else {
+                Log.e(TAG, "saveGoal Firestore error for userId=$userId, goalId=${goal.goalId}", e)
+            }
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "saveGoal Firestore error for userId=$userId, goalId=${goal.goalId}", e)
+            false
+        }
+    }
+
+    suspend fun getGoals(userId: String): List<GoalEntity> {
+        return try {
+            val snapshot = userGoalsRef(userId)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { doc ->
+                runCatching { GoalEntity.fromMap(doc.data ?: emptyMap()) }
+                    .onFailure { e -> Log.e("FirestoreParse", "Failed to parse goal doc ${doc.id}", e) }
+                    .getOrNull()
+            }
+        } catch (e: FirebaseFirestoreException) {
+            val msg = e.message ?: ""
+            if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("offline", ignoreCase = true)) {
+                Log.e(TAG, "Firestore error: $msg")
+            } else {
+                Log.e(TAG, "getGoals Firestore error for uid=$userId", e)
+            }
+            emptyList()
+        } catch (e: Exception) {
+            Log.e(TAG, "getGoals Firestore error for uid=$userId", e)
+            emptyList()
+        }
+    }
+
+    fun observeGoals(userId: String): Flow<List<GoalEntity>> = callbackFlow {
+        val registration = userGoalsRef(userId)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    val msg = error.message ?: ""
+                    if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("offline", ignoreCase = true)) {
+                        Log.e(TAG, "Firestore error: $msg")
+                    } else {
+                        Log.e(TAG, "observeGoals error for uid=$userId: $msg", error)
+                    }
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val goals = snapshot?.documents?.mapNotNull { doc ->
+                    runCatching { GoalEntity.fromMap(doc.data ?: emptyMap()) }
+                        .onFailure { e -> Log.e("FirestoreParse", "Failed to parse goal doc ${doc.id}", e) }
+                        .getOrNull()
+                }.orEmpty()
+                trySend(goals)
+            }
+        awaitClose { registration.remove() }
+    }
+
+    suspend fun deleteGoal(userId: String, goalId: String): Boolean {
+        return try {
+            userGoalsRef(userId)
+                .document(goalId)
+                .delete()
+                .await()
+            true
+        } catch (e: FirebaseFirestoreException) {
+            val msg = e.message ?: ""
+            if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("offline", ignoreCase = true)) {
+                Log.e(TAG, "Firestore error: $msg")
+            } else {
+                Log.e(TAG, "deleteGoal Firestore error for userId=$userId, goalId=$goalId", e)
+            }
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteGoal Firestore error for userId=$userId, goalId=$goalId", e)
+            false
+        }
+    }
+
+    // ── Preference methods (DataStore → Firestore map) ──
+
+    suspend fun savePreferencesMap(userId: String, prefsMap: Map<String, Any>): Boolean {
+        return try {
+            userPreferencesRef(userId)
+                .document("main")
+                .set(prefsMap)
+                .await()
+            true
+        } catch (e: FirebaseFirestoreException) {
+            val msg = e.message ?: ""
+            if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("offline", ignoreCase = true)) {
+                Log.e(TAG, "Firestore error: $msg")
+            } else {
+                Log.e(TAG, "savePreferencesMap error for userId=$userId", e)
+            }
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "savePreferencesMap error for userId=$userId", e)
+            false
+        }
+    }
+
+    suspend fun getPreferencesMap(userId: String): Map<String, Any>? {
+        return try {
+            val doc = userPreferencesRef(userId)
+                .document("main")
+                .get()
+                .await()
+            if (doc.exists()) doc.data else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun getUserProfileMap(userId: String): Map<String, Any>? {
+        return try {
+            val doc = firestore.collection("users").document(userId)
+                .get()
+                .await()
+            if (doc.exists()) doc.data else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun saveUserProfileMap(userId: String, profileMap: Map<String, Any>): Boolean {
+        return try {
+            firestore.collection("users").document(userId)
+                .set(profileMap)
+                .await()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "saveUserProfileMap error for userId=$userId", e)
+            false
         }
     }
 

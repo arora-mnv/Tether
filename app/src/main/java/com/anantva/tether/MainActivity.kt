@@ -1,6 +1,7 @@
 package com.anantva.tether
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -19,7 +20,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
-import com.anantva.tether.data.repository.TetherRepository
+import com.anantva.tether.data.repository.SyncManager
+import com.anantva.tether.data.repository.SyncResult
 import com.anantva.tether.state.AppStartState
 import com.anantva.tether.ui.theme.TetherTheme
 import com.anantva.tether.ui_elements.screens.AuthScreen
@@ -29,9 +31,9 @@ import com.anantva.tether.ui_elements.screens.NameInputScreen
 import com.anantva.tether.ui_elements.screens.OnboardingScreen
 import com.anantva.tether.ui_elements.screens.SplashScreen
 import com.anantva.tether.ui_elements.screens.setup.SetupWizardScreen
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -44,7 +46,7 @@ class MainActivity : ComponentActivity() {
     lateinit var authManager: FirebaseAuthManager
 
     @Inject
-    lateinit var tetherRepository: TetherRepository
+    lateinit var syncManager: SyncManager
 
     private val authViewModel: AuthViewModel by viewModels()
 
@@ -103,7 +105,24 @@ class MainActivity : ComponentActivity() {
                         if (isLoggedIn && isCloudSyncEnabled) {
                             val userId = authState.userId
                             if (!userId.isNullOrEmpty()) {
-                                tetherRepository.syncLocalWithCloud(userId)
+                                try {
+                                    syncManager.syncAll(userId).collect { result ->
+                                        when (result) {
+                                            is SyncResult.Syncing -> {
+                                                Log.d("MainActivity", "Sync in progress: ${result.message}")
+                                            }
+                                            is SyncResult.Done -> {
+                                                Log.d("MainActivity", "Sync complete: ${result.message}")
+                                            }
+                                            is SyncResult.Error -> {
+                                                Log.e("MainActivity", "Sync error: ${result.message}")
+                                            }
+                                            else -> {}
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("MainActivity", "Sync failed", e)
+                                }
                             }
                         }
                     }

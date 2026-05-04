@@ -23,4 +23,18 @@ data class UserProfileEntity(
         "emergencyFundBalance" to emergencyFundBalance,
         "currentStreak" to currentStreak
     )
+
+    companion object {
+        fun fromMap(data: Map<String, Any?>): UserProfileEntity {
+            return UserProfileEntity(
+                uid = data["uid"] as? String ?: "",
+                authProvider = data["authProvider"] as? String ?: "",
+                emailOrPhone = data["emailOrPhone"] as? String,
+                storagePreference = data["storagePreference"] as? String ?: "local",
+                currentBalance = (data["currentBalance"] as? Number)?.toDouble() ?: 0.0,
+                emergencyFundBalance = (data["emergencyFundBalance"] as? Number)?.toDouble() ?: 0.0,
+                currentStreak = (data["currentStreak"] as? Number)?.toInt() ?: 0
+            )
+        }
+    }
 }

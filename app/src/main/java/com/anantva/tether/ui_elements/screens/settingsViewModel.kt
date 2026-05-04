@@ -4,13 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.repository.SyncManager
+import com.anantva.tether.data.repository.SyncResult
 import com.anantva.tether.data.repository.TetherRepository
 import com.anantva.tether.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -26,9 +30,13 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val tetherRepository: TetherRepository,
+    private val syncManager: SyncManager,
     private val authManager: FirebaseAuthManager,
     private val userRepository: UserRepository
 ) : ViewModel() {
+
+    private val _syncState = MutableStateFlow<SyncResult?>(null)
+    val syncState: StateFlow<SyncResult?> = _syncState
 
     val uiState: StateFlow<SettingsUiState> = combine(
         preferencesRepository.savingsGoal,
@@ -71,18 +79,47 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Called when the sync toggle is flipped.
+     * If enabling sync: sign-in check → enable flag → immediately run full reconciliation.
+     * Updates syncState for the UI to observe.
+     */
     fun setCloudStorage(enabled: Boolean, onAuthRequired: () -> Unit = {}) {
-        viewModelScope.launch {
-            if (enabled) {
-                if (!authManager.isLoggedIn()) {
-                    onAuthRequired()
-                    return@launch
-                }
-                // Load current user data into UserRepository on cloud sync enable
+        if (enabled) {
+            if (!authManager.isLoggedIn()) {
+                onAuthRequired()
+                return
+            }
+            viewModelScope.launch {
                 userRepository.loadCurrentUser()
             }
+        }
+
+        // Toggle the flag immediately
+        viewModelScope.launch {
             preferencesRepository.setCloudStorageEnabled(enabled)
         }
+
+        // If enabling, trigger immediate reconciliation
+        if (enabled) {
+            val uid = authManager.getCurrentUserId().orEmpty()
+            viewModelScope.launch {
+                _syncState.value = SyncResult.Syncing("Starting sync...")
+                try {
+                    syncManager.syncAll(uid).collect { result ->
+                        _syncState.value = result
+                    }
+                } catch (e: Exception) {
+                    _syncState.value = SyncResult.Error("Sync failed: ${e.message}")
+                }
+            }
+        } else {
+            _syncState.value = null
+        }
+    }
+
+    fun clearSyncState() {
+        _syncState.value = null
     }
 
     fun setNotificationsEnabled(enabled: Boolean) {

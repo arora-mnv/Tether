@@ -31,6 +31,30 @@ object DatabaseModule {
 
     @Provides
     @Singleton
+    fun provideTransactionDao(db: AppDatabase): TransactionDao {
+        return db.transactionDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideGoalDao(db: AppDatabase): GoalDao {
+        return db.goalDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserProfileDao(db: AppDatabase): UserProfileDao {
+        return db.userProfileDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideCategoryCorrectionDao(db: AppDatabase): CategoryCorrectionDao {
+        return db.categoryCorrectionDao()
+    }
+
+    @Provides
+    @Singleton
     fun provideFirebaseAuthManager(): FirebaseAuthManager {
         return FirebaseAuthManager()
     }

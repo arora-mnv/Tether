@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.tasks.await
-
 private const val TAG = "TetherFirestore"
 
 class TetherRepository(
@@ -226,10 +225,13 @@ class TetherRepository(
 
     suspend fun saveGoal(goal: GoalEntity): Boolean {
         return try {
+            // Always save locally first
+            goalDao.upsertGoal(goal)
+            Log.d("TetherGoal", "Goal saved locally, goalId=${goal.goalId}")
+
+            // Then push to cloud if sync is on
             if (isCloud() && uid().isNotEmpty()) {
                 saveGoalToCloud(uid(), goal)
-            } else {
-                goalDao.insertGoal(goal)
             }
             true
         } catch (e: FirebaseFirestoreException) {
@@ -241,16 +243,21 @@ class TetherRepository(
             }
             false
         } catch (e: Exception) {
-            Log.e(TAG, "saveGoal Firestore error", e)
+            Log.e(TAG, "saveGoal error", e)
             false
         }
     }
 
     suspend fun setActiveGoal(goal: GoalEntity): Boolean {
         return try {
+            // Always save locally first
+            goalDao.deactivateAllGoals()
+            goalDao.upsertGoal(goal.copy(isActive = true))
+            Log.d("TetherGoal", "Active goal set locally, goalId=${goal.goalId}")
+
+            // Then push to cloud if sync is on
             if (isCloud() && uid().isNotEmpty()) {
                 val uid = uid()
-                // Deactivate all existing goals in Firestore then write the new active one
                 val existing = userDoc(uid).collection("goals")
                     .whereEqualTo("isActive", true).get().await()
                 val batch = firestore.batch()
@@ -259,9 +266,6 @@ class TetherRepository(
                     .document(goal.goalId.toString())
                 batch.set(newRef, goal.copy(isActive = true).toMap())
                 batch.commit().await()
-            } else {
-                goalDao.deactivateAllGoals()
-                goalDao.insertGoal(goal.copy(isActive = true))
             }
             true
         } catch (e: FirebaseFirestoreException) {
@@ -273,19 +277,22 @@ class TetherRepository(
             }
             false
         } catch (e: Exception) {
-            Log.e(TAG, "setActiveGoal Firestore error", e)
+            Log.e(TAG, "setActiveGoal error", e)
             false
         }
     }
 
     suspend fun completeGoal(goalId: Int): Boolean {
         return try {
+            // Always save locally first
+            goalDao.markGoalAsCompleted(goalId)
+            Log.d("TetherGoal", "Goal completed locally, goalId=$goalId")
+
+            // Then push to cloud if sync is on
             if (isCloud() && uid().isNotEmpty()) {
                 userDoc(uid()).collection("goals")
                     .document(goalId.toString())
                     .update("isActive", false).await()
-            } else {
-                goalDao.markGoalAsCompleted(goalId)
             }
             true
         } catch (e: FirebaseFirestoreException) {
@@ -297,21 +304,24 @@ class TetherRepository(
             }
             false
         } catch (e: Exception) {
-            Log.e(TAG, "completeGoal Firestore error", e)
+            Log.e(TAG, "completeGoal error", e)
             false
         }
     }
 
     suspend fun updateActiveGoalTarget(targetAmount: Double): Boolean {
         return try {
+            // Always save locally first
+            goalDao.updateActiveGoalTarget(targetAmount)
+            Log.d("TetherGoal", "Active goal target updated locally: $targetAmount")
+
+            // Then push to cloud if sync is on
             if (isCloud() && uid().isNotEmpty()) {
                 val uid = uid()
                 val snapshot = userDoc(uid).collection("goals")
                     .whereEqualTo("isActive", true).limit(1).get().await()
                 snapshot.documents.firstOrNull()
                     ?.reference?.update("targetAmount", targetAmount)?.await()
-            } else {
-                goalDao.updateActiveGoalTarget(targetAmount)
             }
             true
         } catch (e: FirebaseFirestoreException) {
@@ -323,7 +333,7 @@ class TetherRepository(
             }
             false
         } catch (e: Exception) {
-            Log.e(TAG, "updateActiveGoalTarget Firestore error", e)
+            Log.e(TAG, "updateActiveGoalTarget error", e)
             false
         }
     }
@@ -776,39 +786,6 @@ class TetherRepository(
 
     fun getTransactionsFromCloud(uid: String): Flow<List<TransactionEntity>> =
         firestoreRepository.observeTransactions(uid)
-
-     /**
-     * Sync local DB with Firestore on login.
-     * Basic version: overwrite local with cloud data.
-     * Returns true if cloud had data, false if local was pushed to cloud.
-     */
-    suspend fun syncLocalWithCloud(userId: String): Boolean {
-        if (userId.isEmpty()) {
-            Log.e("TetherTxn", "syncLocalWithCloud: userId is empty, skipping sync")
-            return false
-        }
-        
-        val cloudTransactions = firestoreRepository.getTransactionsOrNull(userId)
-        if (cloudTransactions == null) {
-            Log.e("TetherTxn", "syncLocalWithCloud: Failed to fetch cloud data for userId=$userId")
-            return false
-        }
-        
-        transactionDao.deleteAllConfirmedTransactions()
-        if (cloudTransactions.isNotEmpty()) {
-            cloudTransactions.forEach { transactionDao.upsertTransaction(it) }
-            Log.d("TetherTxn", "syncLocalWithCloud: Synced ${cloudTransactions.size} transactions from cloud")
-            return true
-        } else {
-            // Cloud empty → push local to cloud
-            val localTransactions = transactionDao.getAllConfirmedTransactions()
-            localTransactions.forEach {
-                firestoreRepository.saveTransaction(userId, it)
-            }
-            Log.d("TetherTxn", "syncLocalWithCloud: Pushed ${localTransactions.size} local transactions to cloud")
-            return false
-        }
-    }
 
     suspend fun deleteTransaction(userId: String, transactionId: Long) {
         if (isCloud() && userId.isNotEmpty()) {

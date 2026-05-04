@@ -19,4 +19,16 @@ data class GoalEntity(
         "endDate" to endDate,
         "isActive" to isActive
     )
+
+    companion object {
+        fun fromMap(data: Map<String, Any?>): GoalEntity {
+            return GoalEntity(
+                goalId = (data["goalId"] as? Number)?.toInt() ?: 0,
+                targetAmount = (data["targetAmount"] as? Number)?.toDouble() ?: 0.0,
+                startDate = (data["startDate"] as? Number)?.toLong() ?: 0L,
+                endDate = (data["endDate"] as? Number)?.toLong() ?: 0L,
+                isActive = (data["isActive"] as? Boolean) ?: false
+            )
+        }
+    }
 }
