@@ -1,10 +1,17 @@
 package com.anantva.tether.di
 
 import android.content.Context
-import com.anantva.tether.auth.FirebaseAuthManager
+import androidx.room.Room
 import com.anantva.tether.data.local.AppDatabase
-import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.local.dao.CategoryCorrectionDao
+import com.anantva.tether.data.local.dao.GoalDao
+import com.anantva.tether.data.local.dao.TransactionDao
+import com.anantva.tether.data.local.dao.UserProfileDao
+import com.anantva.tether.data.parser.CategoryEngine
+import com.anantva.tether.data.repository.FirestoreRepository
 import com.anantva.tether.data.repository.TetherRepository
+import com.anantva.tether.auth.FirebaseAuthManager
+import com.anantva.tether.data.local.UserPreferencesRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -24,28 +31,28 @@ object DatabaseModule {
 
     @Provides
     @Singleton
+    fun provideFirebaseAuthManager(): FirebaseAuthManager {
+        return FirebaseAuthManager()
+    }
+
+    @Provides
+    @Singleton
     fun provideRepository(
         db: AppDatabase,
         preferencesRepository: UserPreferencesRepository,
-        authManager: FirebaseAuthManager
+        authManager: FirebaseAuthManager,
+        firestoreRepository: FirestoreRepository
     ): TetherRepository {
+        val categoryEngine = CategoryEngine(db.categoryCorrectionDao())
         return TetherRepository(
             userProfileDao        = db.userProfileDao(),
             goalDao               = db.goalDao(),
             transactionDao        = db.transactionDao(),
+            categoryCorrectionDao = db.categoryCorrectionDao(),
             preferencesRepository = preferencesRepository,
-            authManager           = authManager
+            authManager           = authManager,
+            firestoreRepository   = firestoreRepository,
+            categoryEngine        = categoryEngine
         )
-    }
-}
-
-@Module
-@InstallIn(SingletonComponent::class)
-object AuthModule {
-
-    @Provides
-    @Singleton
-    fun provideFirebaseAuthManager(): FirebaseAuthManager {
-        return FirebaseAuthManager()
     }
 }

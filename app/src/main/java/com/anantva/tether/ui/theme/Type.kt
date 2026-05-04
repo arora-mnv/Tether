@@ -20,32 +20,114 @@ val Figtree = FontFamily(
 
 // Renamed to TetherTypography to prevent Android Studio crashes
 val TetherTypography = Typography(
-    // Massive Daily Limit text
+    // Display styles
     displayLarge = TextStyle(
         fontFamily = Figtree,
         fontWeight = FontWeight.Bold,
-        fontSize = 40.sp,
-        color = TetherWhite // Now this will work once Color.kt is properly set up
+        fontSize = 57.sp,
+        lineHeight = 64.sp,
+        color = TetherWhite
     ),
-    // Standard Headers
-    titleLarge = TextStyle(
+    displayMedium = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Bold,
+        fontSize = 45.sp,
+        lineHeight = 52.sp,
+        color = TetherWhite
+    ),
+    displaySmall = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Bold,
+        fontSize = 36.sp,
+        lineHeight = 44.sp,
+        color = TetherWhite
+    ),
+    // Headline styles
+    headlineLarge = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Bold,
+        fontSize = 32.sp,
+        lineHeight = 40.sp,
+        color = TetherWhite
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 36.sp,
+        color = TetherWhite
+    ),
+    headlineSmall = TextStyle(
         fontFamily = Figtree,
         fontWeight = FontWeight.Bold,
         fontSize = 24.sp,
+        lineHeight = 32.sp,
         color = TetherWhite
     ),
-    // Standard Body Text
+    // Title styles
+    titleLarge = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Bold,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        color = TetherWhite
+    ),
+    titleMedium = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        color = TetherWhite
+    ),
+    titleSmall = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        color = TetherWhite
+    ),
+    // Body styles
     bodyLarge = TextStyle(
         fontFamily = Figtree,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
+        lineHeight = 24.sp,
         color = TetherWhite
     ),
-    // Subtle subtext (e.g., dates, merchant info)
     bodyMedium = TextStyle(
         fontFamily = Figtree,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
+        lineHeight = 20.sp,
         color = GrimeGrey
+    ),
+    bodySmall = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        color = GrimeGrey
+    ),
+    // Label styles
+    labelLarge = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        color = TetherWhite
+    ),
+    labelMedium = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        color = TetherWhite
+    ),
+    labelSmall = TextStyle(
+        fontFamily = Figtree,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        color = TetherWhite
     )
 )

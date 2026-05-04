@@ -1,6 +1,8 @@
 package com.anantva.tether.ui_elements.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,10 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,11 +43,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.anantva.tether.ui_elements.components.AvatarIcon
+import com.anantva.tether.ui_elements.components.AvatarPickerGrid
+import com.anantva.tether.ui.theme.TetherRed
 
 private val CardBg = Color(0xFF1A1A1A)
 private val DarkBg = Color(0xFF0F0F0F)
 private val GrimeGrey = Color(0xFFA0A0A0)
-private val TetherRed = Color(0xFFE53935)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +62,8 @@ fun ProfileSheet(
     var name by remember(uiState.name) { mutableStateOf(uiState.name) }
     var email by remember(uiState.email) { mutableStateOf(uiState.email) }
     var phone by remember(uiState.phone) { mutableStateOf(uiState.phone) }
+    var showAvatarPicker by remember { mutableStateOf(false) }
+    var selectedAvatarId by remember(uiState.avatarId) { mutableStateOf(uiState.avatarId) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -73,7 +82,8 @@ fun ProfileSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 32.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
@@ -92,12 +102,72 @@ fun ProfileSheet(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
+
+            Box(
+                modifier = Modifier
+                    .clickable { showAvatarPicker = !showAvatarPicker },
+                contentAlignment = Alignment.Center
+            ) {
+                AvatarIcon(
+                    avatarId = selectedAvatarId,
+                    size = 80.dp,
+                    modifier = Modifier.border(2.dp, TetherRed, CircleShape)
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(TetherRed),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Edit, contentDescription = "Change avatar", tint = Color.White, modifier = Modifier.size(14.dp))
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Tap to change avatar",
+                fontSize = 12.sp,
+                color = GrimeGrey
+            )
+
+            if (showAvatarPicker) {
+                Spacer(Modifier.height(16.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(DarkBg)
+                        .padding(12.dp)
+                ) {
+                    AvatarPickerGrid(
+                        selectedAvatarId = selectedAvatarId,
+                        onAvatarSelected = { selectedAvatarId = it }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        viewModel.selectAvatar(selectedAvatarId)
+                        showAvatarPicker = false
+                    },
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = TetherRed)
+                ) {
+                    Text("Use this avatar", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
 
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Name") },
+                label = { Text("Name", color = GrimeGrey) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -105,7 +175,7 @@ fun ProfileSheet(
             OutlinedTextField(
                 value = phone,
                 onValueChange = { phone = it },
-                label = { Text("Phone") },
+                label = { Text("Phone", color = GrimeGrey) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -113,12 +183,12 @@ fun ProfileSheet(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text("Email") },
+                label = { Text("Email", color = GrimeGrey) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(18.dp))
 
             Row(
                 modifier = Modifier
@@ -131,26 +201,12 @@ fun ProfileSheet(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Cloud sync", color = Color.White, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(2.dp))
-                    Text("Enable sync (not implemented yet)", color = GrimeGrey, style = MaterialTheme.typography.bodySmall)
+                    Text("Enable sync", color = GrimeGrey, style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = uiState.isCloudStorage, onCheckedChange = viewModel::setCloudStorage)
             }
 
             Spacer(Modifier.height(14.dp))
-
-            Button(
-                onClick = { /* placeholder */ },
-                enabled = uiState.isCloudStorage,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = TetherRed)
-            ) {
-                Text("Sync now", fontWeight = FontWeight.Bold, color = Color.White)
-            }
-
-            Spacer(Modifier.height(12.dp))
 
             Button(
                 onClick = {

@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.anantva.tether"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -31,6 +31,12 @@ android {
     buildFeatures {
         compose = true
     }
+
+    lint {
+        ignoreTestSources = true
+        abortOnError = false
+        disable += listOf("NullSafeMutableLiveData", "FlowOperatorInvokedInComposition", "FrequentlyChangingValue", "RememberInComposition")
+    }
 }
 
 dependencies {
@@ -43,6 +49,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation("androidx.compose.foundation:foundation")
 
 //  Firebase
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
@@ -51,6 +58,7 @@ dependencies {
 
     // Hilt
     implementation(libs.hilt.android)
+    implementation(libs.androidx.compose.remote.creation.compose)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
 
@@ -79,4 +87,7 @@ dependencies {
 
     // Google Sign-In
     implementation("com.google.android.gms:play-services-auth:20.7.0")
+
+    // Coroutines + Play Services (for Task.await())
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 }

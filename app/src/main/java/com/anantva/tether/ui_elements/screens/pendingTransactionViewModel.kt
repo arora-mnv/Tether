@@ -2,6 +2,7 @@ package com.anantva.tether.ui_elements.screens
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.anantva.tether.data.local.entity.SpendingCategories
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.repository.TetherRepository
 import com.anantva.tether.transactionpopup.PendingSnoozeStore
@@ -20,6 +21,8 @@ data class PendingTransactionUiState(
     val amount:     Double  = 0.0,
     val merchant:   String  = "",
     val isDebit:    Boolean = true,
+    val category:   String  = SpendingCategories.OTHER,
+    val isRecurring: Boolean = false,
     val countdown:  Int     = 15
 )
 
@@ -65,6 +68,8 @@ class PendingTransactionViewModel @Inject constructor(
             amount    = entity.amount,
             merchant  = entity.merchant,
             isDebit   = entity.type == "Expense",
+            category  = entity.category,
+            isRecurring = entity.typedCategory == com.anantva.tether.data.local.entity.TxnCategory.RECURRING,
             countdown = 15
         )
         startCountdown()
@@ -76,6 +81,14 @@ class PendingTransactionViewModel @Inject constructor(
 
     fun updateMerchant(value: String) {
         _uiState.value = _uiState.value.copy(merchant = value)
+    }
+
+    fun updateCategory(value: String) {
+        _uiState.value = _uiState.value.copy(category = value)
+    }
+
+    fun toggleRecurring() {
+        _uiState.value = _uiState.value.copy(isRecurring = !_uiState.value.isRecurring)
     }
 
     fun toggleType() {
@@ -114,11 +127,14 @@ class PendingTransactionViewModel @Inject constructor(
     private fun confirmAndClose() {
         val state = _uiState.value
         viewModelScope.launch {
+            val txnCategory = if (state.isRecurring) com.anantva.tether.data.local.entity.TxnCategory.RECURRING.toDbValue() else com.anantva.tether.data.local.entity.TxnCategory.NORMAL.toDbValue()
             tetherRepository.confirmAndUpdateTransaction(
-                id       = state.id,
-                amount   = state.amount,
-                merchant = state.merchant,
-                type     = if (state.isDebit) "Expense" else "Credit"
+                id         = state.id,
+                amount      = state.amount,
+                merchant    = state.merchant,
+                type        = if (state.isDebit) "Expense" else "Credit",
+                category    = state.category,
+                txnCategory = txnCategory
             )
             snoozeStore.clearAllForTransaction(state.id)
             visiblePendingId = null

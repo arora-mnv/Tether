@@ -68,14 +68,25 @@ fun VaultScreen(
             initialAmount = editing!!.amount,
             initialMerchant = editing!!.merchant,
             initialIsDebit = editing!!.type == "Expense",
+            initialCategory = editing!!.category,
+            initialIsRecurring = editing!!.typedCategory == com.anantva.tether.data.local.entity.TxnCategory.RECURRING,
             onDismiss = { editing = null },
-            onSave = { amount, merchant, isDebit ->
+            onSave = { amount, merchant, isDebit, category, isRecurring ->
                 val updated = editing!!.copy(
                     amount = amount,
                     merchant = merchant,
-                    type = if (isDebit) "Expense" else "Credit"
+                    type = if (isDebit) "Expense" else "Credit",
+                    category = category,
+                    txnCategory = if (isRecurring) 
+                        com.anantva.tether.data.local.entity.TxnCategory.RECURRING.toDbValue() 
+                    else 
+                        com.anantva.tether.data.local.entity.TxnCategory.NORMAL.toDbValue()
                 )
                 viewModel.updateTransaction(updated)
+                editing = null
+            },
+            onDelete = {
+                viewModel.deleteTransaction(editing!!.transactionId)
                 editing = null
             }
         )

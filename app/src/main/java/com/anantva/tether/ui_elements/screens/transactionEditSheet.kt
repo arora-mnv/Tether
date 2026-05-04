@@ -1,6 +1,7 @@
 package com.anantva.tether.ui_elements.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
@@ -26,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,12 +45,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.anantva.tether.data.local.entity.SpendingCategories
+import com.anantva.tether.data.local.entity.TxnCategory
 
 private val TetherRed = Color(0xFFE53935)
 private val CardBg = Color(0xFF1A1A1A)
 private val DarkBg = Color(0xFF0F0F0F)
 private val GrimeGrey = Color(0xFFA0A0A0)
 private val CreditGreen = Color(0xFF43A047)
+
+val CATEGORY_LIST = listOf(
+    SpendingCategories.FOOD,
+    SpendingCategories.TRANSPORT,
+    SpendingCategories.SHOPPING,
+    SpendingCategories.BILLS,
+    SpendingCategories.ENTERTAINMENT,
+    SpendingCategories.HEALTH,
+    SpendingCategories.EDUCATION,
+    SpendingCategories.RENT,
+    SpendingCategories.EMI,
+    SpendingCategories.SUBSCRIPTION,
+    SpendingCategories.INVESTMENTS,
+    SpendingCategories.OTHER
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,13 +76,17 @@ fun TransactionEditSheet(
     initialAmount: Double,
     initialMerchant: String,
     initialIsDebit: Boolean,
+    initialCategory: String = SpendingCategories.OTHER,
+    initialIsRecurring: Boolean = false,
     onDismiss: () -> Unit,
-    onSave: (amount: Double, merchant: String, isDebit: Boolean) -> Unit,
+    onSave: (amount: Double, merchant: String, isDebit: Boolean, category: String, isRecurring: Boolean) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
     var amountText by remember { mutableStateOf(initialAmount.takeIf { it > 0 }?.toString() ?: "") }
     var merchantText by remember { mutableStateOf(initialMerchant) }
     var isDebit by remember { mutableStateOf(initialIsDebit) }
+    var selectedCategory by remember { mutableStateOf(initialCategory) }
+    var isRecurring by remember { mutableStateOf(initialIsRecurring) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val accentColor = if (isDebit) TetherRed else CreditGreen
@@ -182,13 +207,75 @@ fun TransactionEditSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            Spacer(Modifier.height(14.dp))
+
+            Text("Category", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                CATEGORY_LIST.chunked(3).forEach { rowCategories ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        rowCategories.forEach { cat ->
+                            val isSelected = selectedCategory == cat
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) accentColor.copy(alpha = 0.25f) else Color(0xFF2A2A2A))
+                                    .border(
+                                        width = if (isSelected) 1.dp else 0.dp,
+                                        color = if (isSelected) accentColor else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { selectedCategory = cat }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = cat,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) accentColor else GrimeGrey,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        // Fill remaining space if row has less than 3 items
+                        repeat(3 - rowCategories.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Mark as Recurring", fontSize = 14.sp, color = Color.White)
+                Switch(
+                    checked = isRecurring,
+                    onCheckedChange = { isRecurring = it },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = accentColor,
+                        checkedTrackColor = accentColor.copy(alpha = 0.5f)
+                    )
+                )
+            }
+
             Spacer(Modifier.height(26.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Delete button (only shown when onDelete is provided)
                 if (onDelete != null) {
                     Button(
                         onClick = { showDeleteDialog = true },
@@ -207,11 +294,10 @@ fun TransactionEditSheet(
                     }
                 }
 
-                // Save button (green)
                 Button(
                     onClick = {
                         val parsedAmount = amountValue ?: return@Button
-                        onSave(parsedAmount, merchantText.trim(), isDebit)
+                        onSave(parsedAmount, merchantText.trim(), isDebit, selectedCategory, isRecurring)
                     },
                     enabled = canSave,
                     modifier = Modifier
@@ -231,7 +317,6 @@ fun TransactionEditSheet(
         }
     }
 
-    // Delete confirmation dialog
     if (showDeleteDialog && onDelete != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },

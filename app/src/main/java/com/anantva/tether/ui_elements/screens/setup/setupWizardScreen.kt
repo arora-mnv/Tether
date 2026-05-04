@@ -469,7 +469,8 @@ fun StorageCard(title: String, subtitle: String, isSelected: Boolean, onClick: (
 fun StepAuth(onAuthSuccess: () -> Unit) {
     AuthScreen(
         forceReauth = true,
-        onLoginSuccess = onAuthSuccess
+        onLoginSuccess = onAuthSuccess,
+        onNameRequired = onAuthSuccess
     )
 }
 

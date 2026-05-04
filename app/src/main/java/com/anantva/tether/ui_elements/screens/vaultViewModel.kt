@@ -74,5 +74,11 @@ class VaultViewModel @Inject constructor(
             tetherRepository.updateTransaction(updated)
         }
     }
+
+    fun deleteTransaction(transactionId: Long) {
+        viewModelScope.launch {
+            tetherRepository.deleteTransaction("", transactionId)
+        }
+    }
 }
 

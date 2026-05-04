@@ -38,14 +38,23 @@ class PendingTransactionsViewModel @Inject constructor(
         id: Long,
         amount: Double,
         merchant: String,
-        isDebit: Boolean
+        isDebit: Boolean,
+        category: String = com.anantva.tether.data.local.entity.SpendingCategories.OTHER,
+        isRecurring: Boolean = false
     ) {
         viewModelScope.launch {
+            val txnCategory = if (isRecurring) 
+                com.anantva.tether.data.local.entity.TxnCategory.RECURRING.toDbValue() 
+            else 
+                com.anantva.tether.data.local.entity.TxnCategory.NORMAL.toDbValue()
+            
             tetherRepository.confirmAndUpdateTransaction(
                 id = id,
                 amount = amount,
                 merchant = merchant,
-                type = if (isDebit) "Expense" else "Credit"
+                type = if (isDebit) "Expense" else "Credit",
+                category = category,
+                txnCategory = txnCategory
             )
             snoozeStore.clearAllForTransaction(id)
         }

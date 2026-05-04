@@ -68,7 +68,11 @@ class PendingTransactionNotificationHelper @Inject constructor(
             .addAction(0, "Delete", deletePi)
             .build()
 
-        nm.notify(nid, notification)
+        try {
+            nm.notify(nid, notification)
+        } catch (_: SecurityException) {
+            // Notification permission can be revoked by the user (Android 13+).
+        }
     }
 
     fun cancel(transactionId: Long) {

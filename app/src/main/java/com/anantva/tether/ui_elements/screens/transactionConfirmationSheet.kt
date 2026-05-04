@@ -24,6 +24,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.anantva.tether.data.local.entity.SpendingCategories
+import com.anantva.tether.data.local.entity.TxnCategory
 
 private val TetherRed  = Color(0xFFE53935)
 private val CardBg     = Color(0xFF1A1A1A)
@@ -37,14 +39,20 @@ fun TransactionConfirmationSheet(
     state:           PendingTransactionUiState,
     onAmountChange:  (Double) -> Unit,
     onMerchantChange:(String) -> Unit,
+    onCategoryChange:(String) -> Unit,
+    onToggleRecurring: () -> Unit,
     onToggleType:    () -> Unit,
     onConfirm:       () -> Unit,
     onDelete:        () -> Unit,
     onDismiss:       () -> Unit
 ) {
-    // Local editable text state — synced to ViewModel on change
     var amountText   by remember(state.isVisible) { mutableStateOf(state.amount.toString()) }
     var merchantText by remember(state.isVisible) { mutableStateOf(state.merchant) }
+    var selectedCategory by remember(state.isVisible) { mutableStateOf(state.category) }
+    var isRecurring by remember(state.isVisible) { mutableStateOf(state.isRecurring) }
+
+    // Sync recurring toggle to parent state
+    LaunchedEffect(isRecurring) { onToggleRecurring() }
 
     // Countdown arc animation
     val countdownFraction = state.countdown / 15f
@@ -70,13 +78,12 @@ fun TransactionConfirmationSheet(
         }
     ) {
         Column(
-            modifier            = Modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Header ───────────────────────────────────────────────
             Row(
                 modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -103,7 +110,6 @@ fun TransactionConfirmationSheet(
 
             Spacer(Modifier.height(24.dp))
 
-            // ── Type toggle ───────────────────────────────────────────
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
@@ -136,9 +142,8 @@ fun TransactionConfirmationSheet(
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // ── Amount field ──────────────────────────────────────────
             Text("Amount", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(6.dp))
             OutlinedTextField(
@@ -168,7 +173,6 @@ fun TransactionConfirmationSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            // ── Merchant field ────────────────────────────────────────
             Text("Merchant", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(6.dp))
             OutlinedTextField(
@@ -191,15 +195,81 @@ fun TransactionConfirmationSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            Spacer(Modifier.height(16.dp))
+
+            Text("Category", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                CATEGORY_LIST.chunked(3).forEach { rowCategories ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        rowCategories.forEach { cat ->
+                            val isSelected = selectedCategory == cat
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) accentColor.copy(alpha = 0.25f) else Color(0xFF2A2A2A))
+                                    .border(
+                                        width = if (isSelected) 1.dp else 0.dp,
+                                        color = if (isSelected) accentColor else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable {
+                                        selectedCategory = cat
+                                        onCategoryChange(cat)
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = cat,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) accentColor else GrimeGrey,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        repeat(3 - rowCategories.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Mark as Recurring", fontSize = 14.sp, color = Color.White)
+                Switch(
+                    checked = isRecurring,
+                    onCheckedChange = {
+                        isRecurring = it
+                        onToggleRecurring()
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = accentColor,
+                        checkedTrackColor = accentColor.copy(alpha = 0.5f)
+                    )
+                )
+            }
+
             Spacer(Modifier.height(32.dp))
 
-            // ── Save button + countdown ───────────────────────────────
             Row(
                 modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                // Countdown pill
                 Box(
                     modifier         = Modifier
                         .size(48.dp)
@@ -210,8 +280,6 @@ fun TransactionConfirmationSheet(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Sweeping arc drawn via Canvas would be cleaner but
-                    // CircularProgressIndicator achieves the same result simply
                     CircularProgressIndicator(
                         progress      = { countdownFraction },
                         modifier      = Modifier.size(44.dp),
@@ -230,7 +298,6 @@ fun TransactionConfirmationSheet(
 
                 Spacer(Modifier.width(16.dp))
 
-                // Save button
                 Button(
                     onClick  = onConfirm,
                     modifier = Modifier
@@ -250,7 +317,6 @@ fun TransactionConfirmationSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            // Delete button
             TextButton(
                 onClick = onDelete,
                 modifier = Modifier.fillMaxWidth()

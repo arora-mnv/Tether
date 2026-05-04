@@ -61,8 +61,8 @@ import androidx.compose.ui.unit.sp
 // ─────────────────────────────────────────────
 
 sealed class NavDestination(val route: String) {
-    // ✅ Home is now a real destination — the default state
     object Home     : NavDestination("home")
+    object Insights : NavDestination("insights")
     object Settings : NavDestination("settings")
     object Vault    : NavDestination("vault")
     object Tips     : NavDestination("tips")
@@ -79,8 +79,8 @@ private data class NavItem(
 
 private val navItems = listOf(
     NavItem(NavDestination.Settings, "Settings", Icons.Outlined.Settings,            Icons.Filled.Settings),
+    NavItem(NavDestination.Insights, "Insights", Icons.Outlined.Lightbulb,            Icons.Filled.Lightbulb),
     NavItem(NavDestination.Vault,    "Vault",    Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
-    NavItem(NavDestination.Tips,     "Tips",     Icons.Outlined.Lightbulb,            Icons.Filled.Lightbulb),
     NavItem(NavDestination.Sync,     "Sync",     Icons.Outlined.Backup,               Icons.Filled.Backup)
 )
 

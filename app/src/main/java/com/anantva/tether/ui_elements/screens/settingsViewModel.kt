@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
 import com.anantva.tether.data.repository.TetherRepository
+import com.anantva.tether.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,8 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val tetherRepository: TetherRepository,
-    private val authManager: FirebaseAuthManager
+    private val authManager: FirebaseAuthManager,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -72,16 +74,12 @@ class SettingsViewModel @Inject constructor(
     fun setCloudStorage(enabled: Boolean, onAuthRequired: () -> Unit = {}) {
         viewModelScope.launch {
             if (enabled) {
-                // Force login when enabling cloud sync
                 if (!authManager.isLoggedIn()) {
                     onAuthRequired()
                     return@launch
                 }
-                preferencesRepository.updateUserProfile(
-                    name = authManager.getCurrentUserName().orEmpty(),
-                    email = authManager.getCurrentUserEmail().orEmpty(),
-                    phone = authManager.getCurrentUserPhone().orEmpty()
-                )
+                // Load current user data into UserRepository on cloud sync enable
+                userRepository.loadCurrentUser()
             }
             preferencesRepository.setCloudStorageEnabled(enabled)
         }
@@ -103,6 +101,7 @@ class SettingsViewModel @Inject constructor(
 
     fun logout() {
         viewModelScope.launch {
+            userRepository.clearUser()
             authManager.signOut()
             preferencesRepository.setCloudStorageEnabled(false)
             preferencesRepository.updateUserProfile(name = "", email = "", phone = "")

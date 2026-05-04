@@ -62,6 +62,10 @@ fun SettingsScreen(
                 showAuth = false
                 viewModel.setCloudStorage(true)
             },
+            onNameRequired = {
+                showAuth = false
+                viewModel.setCloudStorage(true)
+            },
             onCancel = { showAuth = false }
         )
         return

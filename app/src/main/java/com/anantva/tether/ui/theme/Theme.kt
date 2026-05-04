@@ -10,9 +10,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val TetherColorScheme = darkColorScheme(
-    primary = BalloonRed,
-    background = SewerBlack,
-    surface = SewerBlack,
+    primary = TetherRed,
+    background = DarkBg,
+    surface = DarkBg,
     onPrimary = TetherWhite,
     onBackground = TetherWhite,
     onSurface = TetherWhite,
@@ -27,8 +27,7 @@ fun TetherTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // This makes the top status bar match our Sewer Black theme
-            window.statusBarColor = SewerBlack.toArgb()
+            window.statusBarColor = DarkBg.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
         }
     }

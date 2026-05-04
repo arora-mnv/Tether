@@ -17,6 +17,7 @@ class UserPreferencesRepository @Inject constructor(
     private val dataStore: DataStore<Preferences>
 ) {
     private object PreferencesKeys {
+        val HAS_COMPLETED_ONBOARDING = booleanPreferencesKey("has_completed_onboarding")
         val HAS_COMPLETED_SETUP    = booleanPreferencesKey("has_completed_setup")
         val CURRENT_BALANCE        = stringPreferencesKey("current_balance")
         val SAVINGS_GOAL           = stringPreferencesKey("savings_goal")
@@ -27,9 +28,13 @@ class UserPreferencesRepository @Inject constructor(
         val USER_NAME              = stringPreferencesKey("user_name")
         val USER_EMAIL             = stringPreferencesKey("user_email")
         val USER_PHONE             = stringPreferencesKey("user_phone")
+        val SELECTED_AVATAR        = stringPreferencesKey("selected_avatar")
         val STREAK_DAYS            = intPreferencesKey("streak_days")
         val LAST_STREAK_CHECK      = longPreferencesKey("last_streak_check_date")
     }
+
+    val hasCompletedOnboarding: Flow<Boolean> =
+        dataStore.data.map { it[PreferencesKeys.HAS_COMPLETED_ONBOARDING] ?: false }
 
     val hasCompletedSetup: Flow<Boolean> =
         dataStore.data.map { it[PreferencesKeys.HAS_COMPLETED_SETUP] ?: false }
@@ -61,6 +66,9 @@ class UserPreferencesRepository @Inject constructor(
 
     val userPhone: Flow<String> =
         dataStore.data.map { it[PreferencesKeys.USER_PHONE] ?: "" }
+
+    val selectedAvatar: Flow<String> =
+        dataStore.data.map { it[PreferencesKeys.SELECTED_AVATAR] ?: "chill_cat" }
 
     val streakDays: Flow<Int> =
         dataStore.data.map { it[PreferencesKeys.STREAK_DAYS] ?: 0 }
@@ -129,6 +137,18 @@ class UserPreferencesRepository @Inject constructor(
             prefs[PreferencesKeys.USER_NAME] = name
             prefs[PreferencesKeys.USER_EMAIL] = email
             prefs[PreferencesKeys.USER_PHONE] = phone
+        }
+    }
+
+    suspend fun setSelectedAvatar(avatarId: String) {
+        dataStore.edit { prefs ->
+            prefs[PreferencesKeys.SELECTED_AVATAR] = avatarId
+        }
+    }
+
+    suspend fun setHasCompletedOnboarding(value: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[PreferencesKeys.HAS_COMPLETED_ONBOARDING] = value
         }
     }
 
