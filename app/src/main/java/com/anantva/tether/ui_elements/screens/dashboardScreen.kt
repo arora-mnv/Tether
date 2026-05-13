@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -12,8 +13,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -98,6 +98,123 @@ private val StreakRed    = Color(0xFFD32F2F)
 private val StreakOrange = Color(0xFFE65100)
 private val StreakPurple = Color(0xFF6A1B9A)
 
+// ===== EXACT COLOR SYSTEM FOR STREAK ORB =====
+// 0-7 DAYS — BRONZE
+private val BronzeLight1 = Color(0xFFFFB36B) // #FFB36B
+private val BronzeLight2 = Color(0xFFFF8C42) // #FF8C42
+private val BronzeDeep1 = Color(0xFFE05A2A)  // #E05A2A
+private val BronzeDeep2 = Color(0xFFB63A16)  // #B63A16
+
+// 7-21 DAYS — SILVER
+private val SilverLight1 = Color(0xFFDCE6F2) // #DCE6F2
+private val SilverLight2 = Color(0xFFB8C7D9) // #B8C7D9
+private val SilverDeep1 = Color(0xFF7E8FA6)  // #7E8FA6
+private val SilverDeep2 = Color(0xFF58677D)  // #58677D
+
+// 21-60 DAYS — GOLD
+private val GoldLight1 = Color(0xFFFFE27A)   // #FFE27A
+private val GoldLight2 = Color(0xFFFFC93D)   // #FFC93D
+private val GoldDeep1 = Color(0xFFF5A300)    // #F5A300
+private val GoldDeep2 = Color(0xFFD97B00)    // #D97B00
+
+// 60-120 DAYS — PURPLE
+private val PurpleLight1 = Color(0xFFC084FF) // #C084FF
+private val PurpleLight2 = Color(0xFF9B5CFF) // #9B5CFF
+private val PurpleDeep1 = Color(0xFF6B2DFF)  // #6B2DFF
+private val PurpleDeep2 = Color(0xFF4A00E0)  // #4A00E0
+
+// 120-250 DAYS — DEEP GOLD
+private val DeepGoldLight1 = Color(0xFFFFD95A) // #FFD95A
+private val DeepGoldLight2 = Color(0xFFFFB800) // #FFB800
+private val DeepGoldDeep1 = Color(0xFFFF8A00)  // #FF8A00
+private val DeepGoldDeep2 = Color(0xFFD96A00)  // #D96A00
+
+// 250-365 DAYS — ORANGE
+private val OrangeLight1 = Color(0xFFFF9A4D)   // #FF9A4D
+private val OrangeLight2 = Color(0xFFFF6B1A)   // #FF6B1A
+private val OrangeDeep1 = Color(0xFFE63E00)    // #E63E00
+private val OrangeDeep2 = Color(0xFFB82500)    // #B82500
+
+// 365+ DAYS — RED
+private val RedLight1 = Color(0xFFFF6B6B)      // #FF6B6B
+private val RedLight2 = Color(0xFFFF3B3B)      // #FF3B3B
+private val RedDeep1 = Color(0xFFD10000)       // #D10000
+private val RedDeep2 = Color(0xFF7A0000)       // #7A0000
+
+// Data class for streak colors
+private data class StreakColors(
+    val light1: Color,
+    val light2: Color,
+    val deep1: Color,
+    val deep2: Color
+)
+
+// Tier palette definitions (per-channel min/max for each tier)
+private enum class TierPalette(
+    val light1: Color, val light2: Color, val deep1: Color, val deep2: Color
+) {
+    BRONZE(BronzeLight1, BronzeLight2, BronzeDeep1, BronzeDeep2),
+    SILVER(SilverLight1, SilverLight2, SilverDeep1, SilverDeep2),
+    GOLD(GoldLight1, GoldLight2, GoldDeep1, GoldDeep2),
+    PURPLE(PurpleLight1, PurpleLight2, PurpleDeep1, PurpleDeep2),
+    DEEP_GOLD(DeepGoldLight1, DeepGoldLight2, DeepGoldDeep1, DeepGoldDeep2),
+    ORANGE(OrangeLight1, OrangeLight2, OrangeDeep1, OrangeDeep2),
+    RED(RedLight1, RedLight2, RedDeep1, RedDeep2)
+}
+
+// 0..6 BRONZE, 7..20 SILVER, 21..59 GOLD, 60..119 PURPLE, 120..249 DEEP_GOLD, 250..364 ORANGE, 365+ RED
+private fun tierAt(streak: Int): TierPalette = when {
+    streak < 7    -> TierPalette.BRONZE
+    streak < 21   -> TierPalette.SILVER
+    streak < 60   -> TierPalette.GOLD
+    streak < 120  -> TierPalette.PURPLE
+    streak < 250  -> TierPalette.DEEP_GOLD
+    streak < 365  -> TierPalette.ORANGE
+    else          -> TierPalette.RED
+}
+
+private const val TIER_TRANSITION_DURATION_MS = 950
+
+private fun TierPalette.toStreakColors(): StreakColors = StreakColors(
+    light1 = light1,
+    light2 = light2,
+    deep1 = deep1,
+    deep2 = deep2
+)
+
+private fun lerpStreakColors(from: StreakColors, to: StreakColors, progress: Float): StreakColors {
+    val easedProgress = FastOutSlowInEasing.transform(progress.coerceIn(0f, 1f))
+    return StreakColors(
+        light1 = lerp(from.light1, to.light1, easedProgress),
+        light2 = lerp(from.light2, to.light2, easedProgress),
+        deep1 = lerp(from.deep1, to.deep1, easedProgress),
+        deep2 = lerp(from.deep2, to.deep2, easedProgress)
+    )
+}
+
+private fun tierName(tier: TierPalette): String = when (tier) {
+    TierPalette.BRONZE -> "I"
+    TierPalette.SILVER -> "II"
+    TierPalette.GOLD -> "III"
+    TierPalette.PURPLE -> "IV"
+    TierPalette.DEEP_GOLD -> "V"
+    TierPalette.ORANGE -> "VI"
+    TierPalette.RED -> "VII"
+}
+
+private fun tierProgress(streak: Int): Float {
+    val (start, end) = when (tierAt(streak)) {
+        TierPalette.BRONZE -> 0 to 7
+        TierPalette.SILVER -> 7 to 21
+        TierPalette.GOLD -> 21 to 60
+        TierPalette.PURPLE -> 60 to 120
+        TierPalette.DEEP_GOLD -> 120 to 250
+        TierPalette.ORANGE -> 250 to 365
+        TierPalette.RED -> 365 to 465
+    }
+    return ((streak - start).toFloat() / (end - start).toFloat()).coerceIn(0f, 1f)
+}
+
 enum class BalloonState { NORMAL, BURSTING, POPPED }
 
 private data class BurstParticle(
@@ -105,6 +222,13 @@ private data class BurstParticle(
     val maxDistanceDp: Float,
     val color: Color,
     val radiusDp: Float
+)
+
+private data class TierConfettiParticle(
+    val angle: Float,
+    val maxDistanceDp: Float,
+    val radiusDp: Float,
+    val colorIndex: Int
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -159,6 +283,7 @@ fun DashboardScreen(
                 onAmountChange   = pendingViewModel::updateAmount,
                 onMerchantChange = pendingViewModel::updateMerchant,
                 onCategoryChange = pendingViewModel::updateCategory,
+                suggestCategory  = pendingViewModel::suggestCategory,
                 onToggleRecurring = pendingViewModel::toggleRecurring,
                 onToggleType     = pendingViewModel::toggleType,
                 onConfirm        = pendingViewModel::confirm,
@@ -176,6 +301,7 @@ fun DashboardScreen(
             initialCategory = com.anantva.tether.data.local.entity.SpendingCategories.OTHER,
             initialIsRecurring = false,
             onDismiss = { showManualEntry = false },
+            suggestCategory = manualTxnViewModel::suggestCategory,
             onSave = { amount, merchant, isDebit, category, isRecurring ->
                 manualTxnViewModel.addManualTransaction(amount, merchant, isDebit, category, isRecurring)
                 showManualEntry = false
@@ -265,43 +391,6 @@ fun HomeContent(
     userAvatarId: String = "chill_cat",
     insightsState: com.anantva.tether.ui_elements.screens.InsightsUiState? = null
 ) {
-    var debugStreak by remember { mutableStateOf<Int?>(null) }
-    val effectiveUiState = uiState.copy(
-        streakDays = debugStreak ?: uiState.streakDays
-    )
-
-    val plusInteractionSource = remember { MutableInteractionSource() }
-    val isPlusPressed by plusInteractionSource.collectIsPressedAsState()
-
-    val minusInteractionSource = remember { MutableInteractionSource() }
-    val isMinusPressed by minusInteractionSource.collectIsPressedAsState()
-
-    LaunchedEffect(isPlusPressed) {
-        if (isPlusPressed) {
-            var current = debugStreak ?: uiState.streakDays
-            debugStreak = current + 1
-            delay(400)
-            while (true) {
-                current = debugStreak ?: uiState.streakDays
-                debugStreak = current + 1
-                delay(60)
-            }
-        }
-    }
-
-    LaunchedEffect(isMinusPressed) {
-        if (isMinusPressed) {
-            var current = debugStreak ?: uiState.streakDays
-            debugStreak = (current - 1).coerceAtLeast(0)
-            delay(400)
-            while (true) {
-                current = debugStreak ?: uiState.streakDays
-                debugStreak = (current - 1).coerceAtLeast(0)
-                delay(60)
-            }
-        }
-    }
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -319,11 +408,11 @@ fun HomeContent(
 
         item { Spacer(Modifier.height(16.dp)) }
 
-        item { BalloonSection(uiState = effectiveUiState) }
+        item { BalloonSection(uiState = uiState) }
 
         item { Spacer(Modifier.height(20.dp)) }
 
-        item { CoreStatsRow(uiState = effectiveUiState, pendingCount = pendingTransactions.size, onSeeAllPending = onSeeAllPending) }
+        item { CoreStatsRow(uiState = uiState) }
 
         item { Spacer(Modifier.height(18.dp)) }
 
@@ -335,23 +424,6 @@ fun HomeContent(
         item { Spacer(Modifier.height(24.dp)) }
 
         item { PendingSection(pendingTransactions = pendingTransactions, onSeeAll = onSeeAllPending) }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                TextButton(
-                    onClick = { },
-                    interactionSource = plusInteractionSource
-                ) { Text("+") }
-
-                TextButton(
-                    onClick = { },
-                    interactionSource = minusInteractionSource
-                ) { Text("-") }
-            }
-        }
 
         item { Spacer(Modifier.height(100.dp)) }
     }
@@ -467,7 +539,7 @@ private fun DashboardTopBar(
 }
 
 @Composable
-private fun CoreStatsRow(uiState: DashboardUiState, pendingCount: Int, onSeeAllPending: () -> Unit) {
+private fun CoreStatsRow(uiState: DashboardUiState) {
     val safeToSpend = uiState.dailyLimitRemaining.coerceAtLeast(0)
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -498,14 +570,13 @@ private fun CoreStatsRow(uiState: DashboardUiState, pendingCount: Int, onSeeAllP
                 .weight(1f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(CardBg)
-                .clickable(onClick = onSeeAllPending)
                 .padding(horizontal = 16.dp, vertical = 20.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = "Pending", fontSize = 12.sp, color = GrimeGrey, fontWeight = FontWeight.Medium)
+                Text(text = "Total Spent", fontSize = 12.sp, color = GrimeGrey, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
-                Text(text = "$pendingCount", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(text = formatCurrency(uiState.dailySpent), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
         }
     }
@@ -543,21 +614,19 @@ private fun SmartInsightCard(
 
 private fun smartInsightMessage(uiState: DashboardUiState): String {
     val hour = LocalTime.now().hour
-    val overBy = uiState.dailySpent - uiState.dailyLimit
     val streak = uiState.streakDays
     return when {
-        uiState.isOverLimit && streak > 7 -> "Even legends slip. Tomorrow's a reset."
-        uiState.isOverLimit && overBy > uiState.dailyLimit -> "That's wild. Tomorrow lock in fr."
-        uiState.isOverLimit -> "Limit breached. Not the vibe."
-        streak >= 30 -> "A whole month of discipline. You're built different."
-        streak >= 14 -> "Two weeks strong. The streak is watching 👀"
-        streak >= 7 -> "A week of staying in lane. Keep it up."
-        streak >= 3 -> "Streak's alive. Don't fumble it."
-        hour in 0..4 -> "It's 4am and you're checking this. Iconic."
-        hour in 5..11 -> "Morning discipline. Rare energy."
-        hour in 12..17 -> "Afternoon check-in. Still behaving."
-        uiState.dailySpent == 0 -> "Zero spent so far. Suspicious but respected."
-        else -> "You're under limit. Keep that energy."
+        uiState.dailySpent == 0 && streak >= 7 -> "Quiet day. Your streak appreciates it."
+        uiState.dailySpent == 0 -> "No unnecessary hits today. Nice."
+        uiState.isOverLimit && streak > 7 -> "A messy day, not a broken run."
+        uiState.isOverLimit -> "Today ran hot. Tomorrow can be cleaner."
+        streak >= 30 -> "Month-long discipline looks good on you."
+        streak >= 14 -> "Two weeks in. The random taps are losing."
+        streak >= 7 -> "The streak is doing its job."
+        hour in 0..4 -> "Late-night restraint still counts."
+        hour in 5..11 -> "Morning check-in. Clean start."
+        hour in 12..17 -> "Spending pace looks steady so far."
+        else -> "Under control today. Keep it boring."
     }
 }
 
@@ -629,7 +698,7 @@ fun BalloonSection(uiState: DashboardUiState) {
     }
 
     val streakPct     = (uiState.streakDays.toFloat() / STREAK_CAP).coerceIn(0f, 1f)
-    val balloonSizeDp = 100f + 100f * (uiState.streakDays.toFloat() / 100f).coerceIn(0f, 1f)
+    val balloonSizeDp = 100f + tierAt(uiState.streakDays).ordinal * 10f
     val countFontSize = (22f + 8f * streakPct).sp
     val labelFontSize = (8f + 2f * streakPct).sp
     val feedbackMessage = dashboardFeedbackMessage(uiState)
@@ -754,57 +823,194 @@ fun StreakBall(
     alpha: Float
 ) {
     val streak = uiState.streakDays
-    val levelColor = when (uiState.streakLevel) {
-        "SILVER" -> Color(0xFFC0C0C0)
-        "GOLD" -> Color(0xFFFFD700)
-        "PLATINUM" -> Color(0xFFE5E4E2)
-        else -> StreakRed
+    val actualTier = remember(streak) { tierAt(streak) }
+    var displayedTier by remember { mutableStateOf(actualTier) }
+    var transitionStartTier by remember { mutableStateOf(actualTier) }
+    var transitionTargetTier by remember { mutableStateOf(actualTier) }
+    val tierTransitionProgress = remember { Animatable(1f) }
+    val confettiProgress = remember { Animatable(1f) }
+    val animatedBallSize by animateDpAsState(
+        targetValue = ballSizeDp.dp,
+        animationSpec = tween(720, easing = FastOutSlowInEasing),
+        label = "tier_orb_size"
+    )
+    val orbGlowTransition = rememberInfiniteTransition(label = "orb_glow")
+    val glowPulse by orbGlowTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "orb_glow_pulse"
+    )
+    val tierEnergy = tierProgress(streak)
+
+    LaunchedEffect(actualTier) {
+        if (actualTier != transitionTargetTier) {
+            transitionStartTier = transitionTargetTier
+            transitionTargetTier = actualTier
+            val colorJob = launch {
+                tierTransitionProgress.snapTo(0f)
+                tierTransitionProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(TIER_TRANSITION_DURATION_MS, easing = FastOutSlowInEasing)
+                )
+            }
+            launch {
+                confettiProgress.snapTo(0f)
+                confettiProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(1000, easing = FastOutSlowInEasing)
+                )
+            }
+            colorJob.join()
+            displayedTier = actualTier
+        }
     }
+
+    val streakColors = lerpStreakColors(
+        from = transitionStartTier.toStreakColors(),
+        to = transitionTargetTier.toStreakColors(),
+        progress = tierTransitionProgress.value
+    )
+    val displayedTierName = tierName(displayedTier)
+    val animatedBallSizeDp = animatedBallSize.value
+    val glowAlpha = 0.24f + tierEnergy * 0.10f + glowPulse * 0.04f
+    val glowRadiusMultiplier = 0.58f + tierEnergy * 0.07f + glowPulse * 0.04f
+    val confettiParticles = remember {
+        List(16) { index ->
+            TierConfettiParticle(
+                angle = ((index * 23f + 8f) * PI / 180f).toFloat(),
+                maxDistanceDp = 26f + (index * 11 % 34).toFloat(),
+                radiusDp = 1.8f + (index % 3) * 0.7f,
+                colorIndex = index
+            )
+        }
+    }
+    
+    val density = LocalDensity.current
+    val center = with(density) { Offset((animatedBallSizeDp * 0.3f).dp.toPx(), (animatedBallSizeDp * 0.3f).dp.toPx()) }
+    val radius = with(density) { (animatedBallSizeDp * 0.5f).dp.toPx() }
 
     Box(
         modifier = Modifier
             .offset(y = floatOffset.dp)
-            .requiredSize(ballSizeDp.dp)
+            .requiredSize(animatedBallSize)
             .scale(scale)
             .alpha(alpha)
-            .clip(CircleShape)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        levelColor.copy(alpha = 0.9f),
-                        levelColor,
-                        levelColor.copy(alpha = 0.7f)
-                    )
-                )
-            ),
-        contentAlignment = Alignment.Center
     ) {
+        // Outer glow layer
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val glowCenter = this.center
+            val glowRadius = size.minDimension * glowRadiusMultiplier
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(streakColors.light1.copy(alpha = glowAlpha), Color.Transparent),
+                    center = glowCenter,
+                    radius = glowRadius
+                ),
+                radius = glowRadius,
+                center = glowCenter
+            )
+        }
+        
+        // Main orb with fluid gradient
         Box(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .offset(x = (ballSizeDp * 0.18f).dp, y = (ballSizeDp * 0.16f).dp)
-                .size((ballSizeDp * 0.22f).dp)
-                .background(Color.White.copy(alpha = 0.13f), CircleShape)
-        )
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text       = streak.toString(),
-                fontSize   = countFontSize,
-                fontWeight = FontWeight.Bold,
-                color      = Color.White
-            )
-            Text(
-                text     = "Day Streak",
-                fontSize = labelFontSize,
-                color    = Color.White.copy(alpha = 0.85f)
-            )
-            if (uiState.streakLevel != "BRONZE") {
-                Text(
-                    text     = uiState.streakLevel,
-                    fontSize = (labelFontSize.value * 0.7).sp,
-                    fontWeight = FontWeight.Bold,
-                    color    = Color.White.copy(alpha = 0.7f)
+                .matchParentSize()
+                .clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            streakColors.light1.copy(alpha = 0.95f),
+                            lerp(streakColors.light1, streakColors.light2, 0.10f),
+                            lerp(streakColors.light1, streakColors.light2, 0.20f),
+                            lerp(streakColors.light1, streakColors.light2, 0.30f),
+                            lerp(streakColors.light1, streakColors.light2, 0.40f),
+                            lerp(streakColors.light1, streakColors.light2, 0.50f),
+                            streakColors.light2,
+                            lerp(streakColors.light2, streakColors.deep1, 0.10f),
+                            lerp(streakColors.light2, streakColors.deep1, 0.20f),
+                            lerp(streakColors.light2, streakColors.deep1, 0.30f),
+                            lerp(streakColors.light2, streakColors.deep1, 0.40f),
+                            lerp(streakColors.light2, streakColors.deep1, 0.50f),
+                            lerp(streakColors.light2, streakColors.deep1, 0.60f),
+                            lerp(streakColors.light2, streakColors.deep1, 0.70f),
+                            lerp(streakColors.light2, streakColors.deep1, 0.80f),
+                            lerp(streakColors.light2, streakColors.deep1, 0.90f),
+                            streakColors.deep1,
+                            lerp(streakColors.deep1, streakColors.deep2, 0.12f),
+                            lerp(streakColors.deep1, streakColors.deep2, 0.25f),
+                            lerp(streakColors.deep1, streakColors.deep2, 0.38f),
+                            lerp(streakColors.deep1, streakColors.deep2, 0.50f),
+                            lerp(streakColors.deep1, streakColors.deep2, 0.62f),
+                            lerp(streakColors.deep1, streakColors.deep2, 0.75f),
+                            lerp(streakColors.deep1, streakColors.deep2, 0.88f),
+                            streakColors.deep2.copy(alpha = 0.88f)
+                        ),
+                        center = center,
+                        radius = radius
+                    )
                 )
+        )
+        
+        // Content
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = streak.toString(),
+                fontSize = countFontSize,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Text(
+                text = "Day Streak",
+                fontSize = labelFontSize,
+                color = Color.White.copy(alpha = 0.9f)
+            )
+            
+            Crossfade(
+                targetState = displayedTierName,
+                animationSpec = tween(400, easing = LinearEasing),
+                label = "tier_text_crossfade"
+            ) { renderedTier ->
+                Text(
+                    text = renderedTier,
+                    fontSize = (labelFontSize.value * 0.7f + 3f).sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
+        }
+
+        if (confettiProgress.value < 1f) {
+            val confettiColors = listOf(
+                streakColors.light1,
+                streakColors.light2,
+                streakColors.deep1,
+                Color.White.copy(alpha = 0.92f)
+            )
+            Canvas(modifier = Modifier.matchParentSize().scale(1.25f)) {
+                val progress = confettiProgress.value
+                val easedProgress = FastOutSlowInEasing.transform(progress)
+                val origin = Offset(size.width / 2f, size.height / 2f)
+                confettiParticles.forEach { particle ->
+                    val distance = particle.maxDistanceDp.dp.toPx() * easedProgress
+                    val fall = 10.dp.toPx() * progress * progress
+                    val particleCenter = Offset(
+                        x = origin.x + cos(particle.angle) * distance,
+                        y = origin.y + sin(particle.angle) * distance + fall
+                    )
+                    drawCircle(
+                        color = confettiColors[particle.colorIndex % confettiColors.size]
+                            .copy(alpha = (1f - progress).coerceIn(0f, 1f) * 0.86f),
+                        radius = particle.radiusDp.dp.toPx() * (1f - progress * 0.25f),
+                        center = particleCenter
+                    )
+                }
             }
         }
     }

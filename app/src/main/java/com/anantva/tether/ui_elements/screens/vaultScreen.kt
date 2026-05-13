@@ -86,6 +86,7 @@ fun VaultScreen(
             initialCategory = editing!!.category,
             initialIsRecurring = editing!!.typedCategory == com.anantva.tether.data.local.entity.TxnCategory.RECURRING,
             onDismiss = { editing = null },
+            suggestCategory = viewModel::suggestCategory,
             onSave = { amount, merchant, isDebit, category, isRecurring ->
                 val updated = editing!!.copy(
                     amount = amount,

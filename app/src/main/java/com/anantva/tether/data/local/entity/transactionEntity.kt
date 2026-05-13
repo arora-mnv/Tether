@@ -48,24 +48,85 @@ object SpendingCategories {
     const val TRANSFER = "Transfer"
     const val OTHER = "Other"
 
+    fun normalizeMerchant(merchant: String): String =
+        merchant
+            .lowercase()
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
     fun categorize(merchant: String, type: String): String {
-        val m = merchant.lowercase()
+        val m = normalizeMerchant(merchant)
         return when {
             type == "Credit" -> INCOME
             m.containsAny("rent", "house rent", "housing") -> RENT
             m.containsAny("emi", "loan", "hdfc", "icici loan", "sbi loan") -> EMI
             m.containsAny("netflix", "spotify", "prime", "youtube premium", "disney", "hotstar", "jio", "airtel plan", "monthly plan", "subscription") -> SUBSCRIPTION
             m.containsAny("mutual fund", "zerodha", "groww", "upstox", "sip", "stock", "invest") -> INVESTMENTS
-            m.containsAny("swiggy", "zomato", "uber eats", "domino", "mcdonald", "burger", "pizza", "food", "restaurant", "cafe", "starbucks") -> FOOD
+            m.containsAny("swiggy", "zomato", "uber eats", "domino", "dominos", "mcdonald", "burger", "pizza", "food", "restaurant", "cafe", "starbucks", "reliance fresh", "bigbasket", "bbdaily", "blinkit", "zepto", "instamart", "dmart", "grocery") -> FOOD
             m.containsAny("uber", "ola", "metro", "rapido", "bus", "train", "petrol", "fuel", "parking") -> TRANSPORT
             m.containsAny("amazon", "flipkart", "myntra", "ajio", "nykaa", "meesho", "shopping", "mall", "retail") -> SHOPPING
-            m.containsAny("electricity", "water", "gas", "broadband", "wifi", "postpaid", "bill") -> BILLS
+            m.containsAny("electricity", "water", "gas", "broadband", "wifi", "postpaid", "bill", "insurance", "lic", "policy", "premium") -> BILLS
             m.containsAny("pharmacy", "hospital", "doctor", "medicine", "lab", "diagnostic") -> HEALTH
             m.containsAny("coursera", "udemy", "school", "college", "tuition", "book") -> EDUCATION
             m.containsAny("paytm", "phonepe", "gpay", "transfer", "upi", "bank transfer") -> TRANSFER
             else -> OTHER
         }
     }
+
+    fun spendNatureFor(
+        category: String,
+        merchant: String,
+        txnCategory: String = TxnCategory.NORMAL.toDbValue()
+    ): SpendNature {
+        val normalizedMerchant = normalizeMerchant(merchant)
+        val typedCategory = TxnCategory.fromDbValue(txnCategory)
+        return when {
+            category in setOf(RENT, EMI, BILLS, HEALTH, EDUCATION, INVESTMENTS) -> SpendNature.NEED
+            category == TRANSPORT -> SpendNature.NEED
+            category == FOOD && normalizedMerchant.containsAny(
+                "reliance fresh", "bigbasket", "bbdaily", "blinkit", "zepto", "instamart", "dmart", "grocery"
+            ) -> SpendNature.NEED
+            category == FOOD -> SpendNature.WANT
+            category == SUBSCRIPTION && (typedCategory == TxnCategory.RECURRING || normalizedMerchant.containsAny(
+                "jio", "airtel", "broadband", "wifi", "postpaid", "cloud storage"
+            )) -> SpendNature.NEED
+            category == SUBSCRIPTION -> SpendNature.WANT
+            category in setOf(SHOPPING, ENTERTAINMENT) -> SpendNature.WANT
+            else -> SpendNature.UNKNOWN
+        }
+    }
+
+    fun streakPenaltyWeight(
+        category: String,
+        merchant: String,
+        txnCategory: String = TxnCategory.NORMAL.toDbValue()
+    ): Double {
+        val normalizedMerchant = normalizeMerchant(merchant)
+        val typedCategory = TxnCategory.fromDbValue(txnCategory)
+        return when {
+            typedCategory == TxnCategory.INCOME || typedCategory == TxnCategory.INVESTMENT -> 0.0
+            category in setOf(RENT, EMI, BILLS) -> 0.0
+            normalizedMerchant.containsAny("insurance", "lic", "policy", "premium") -> 0.0
+            category == SUBSCRIPTION && (typedCategory == TxnCategory.RECURRING || normalizedMerchant.containsAny(
+                "jio", "airtel", "broadband", "wifi", "postpaid"
+            )) -> 0.15
+            typedCategory == TxnCategory.RECURRING -> 0.25
+            category in setOf(HEALTH, EDUCATION) -> 0.25
+            category == TRANSPORT -> 0.45
+            category == FOOD && spendNatureFor(category, merchant, txnCategory) == SpendNature.NEED -> 0.35
+            category == FOOD -> 1.0
+            category == SUBSCRIPTION -> 0.45
+            category in setOf(SHOPPING, ENTERTAINMENT) -> 1.0
+            else -> 0.8
+        }
+    }
+
+    fun isDiscretionarySpend(
+        category: String,
+        merchant: String,
+        txnCategory: String = TxnCategory.NORMAL.toDbValue()
+    ): Boolean = streakPenaltyWeight(category, merchant, txnCategory) >= 0.6
 
     private fun String.containsAny(vararg keywords: String): Boolean {
         return keywords.any { this.contains(it, ignoreCase = true) }

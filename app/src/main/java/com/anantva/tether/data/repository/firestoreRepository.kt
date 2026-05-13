@@ -1,6 +1,7 @@
 package com.anantva.tether.data.repository
 
 import android.util.Log
+import com.anantva.tether.data.local.entity.CategoryCorrectionEntity
 import com.anantva.tether.data.local.entity.GoalEntity
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -29,6 +30,9 @@ class FirestoreRepository @Inject constructor() {
 
     private fun userPreferencesRef(userId: String) =
         firestore.collection("users").document(userId).collection("preferences")
+
+    private fun userCategoryCorrectionsRef(userId: String) =
+        firestore.collection("users").document(userId).collection("categoryCorrections")
 
     suspend fun saveTransaction(userId: String, transaction: TransactionEntity): Boolean {
         return try {
@@ -257,6 +261,57 @@ class FirestoreRepository @Inject constructor() {
         } catch (e: Exception) {
             Log.e(TAG, "savePreferencesMap error for userId=$userId", e)
             false
+        }
+    }
+
+    suspend fun saveCategoryCorrection(userId: String, correction: CategoryCorrectionEntity): Boolean {
+        return try {
+            userCategoryCorrectionsRef(userId)
+                .document(correction.merchantKey)
+                .set(
+                    mapOf(
+                        "merchantKey" to correction.merchantKey,
+                        "category" to correction.category
+                    )
+                )
+                .await()
+            true
+        } catch (e: FirebaseFirestoreException) {
+            val msg = e.message ?: ""
+            if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("offline", ignoreCase = true)) {
+                Log.e(TAG, "Firestore error: $msg")
+            } else {
+                Log.e(TAG, "saveCategoryCorrection error for userId=$userId, key=${correction.merchantKey}", e)
+            }
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "saveCategoryCorrection error for userId=$userId, key=${correction.merchantKey}", e)
+            false
+        }
+    }
+
+    suspend fun getCategoryCorrections(userId: String): List<CategoryCorrectionEntity> {
+        return try {
+            userCategoryCorrectionsRef(userId)
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc ->
+                    val merchantKey = doc.getString("merchantKey") ?: doc.id
+                    val category = doc.getString("category") ?: return@mapNotNull null
+                    CategoryCorrectionEntity(merchantKey = merchantKey, category = category)
+                }
+        } catch (e: FirebaseFirestoreException) {
+            val msg = e.message ?: ""
+            if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("offline", ignoreCase = true)) {
+                Log.e(TAG, "Firestore error: $msg")
+            } else {
+                Log.e(TAG, "getCategoryCorrections error for userId=$userId", e)
+            }
+            emptyList()
+        } catch (e: Exception) {
+            Log.e(TAG, "getCategoryCorrections error for userId=$userId", e)
+            emptyList()
         }
     }
 

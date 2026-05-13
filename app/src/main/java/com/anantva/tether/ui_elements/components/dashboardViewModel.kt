@@ -150,11 +150,14 @@ class DashboardViewModel @Inject constructor(
                 viewModelScope.launch { tetherRepository.completeGoal(activeGoal.goalId) }
             }
 
-            val streakLevel = when (base.streakDays) {
-                in 0..6 -> "BRONZE"
-                in 7..13 -> "SILVER"
-                in 14..29 -> "GOLD"
-                else -> "PLATINUM"
+            val streakLevel = when {
+                base.streakDays < 7 -> "BRONZE"
+                base.streakDays < 21 -> "SILVER"
+                base.streakDays < 60 -> "GOLD"
+                base.streakDays < 120 -> "PURPLE"
+                base.streakDays < 250 -> "DEEP GOLD"
+                base.streakDays < 365 -> "ORANGE"
+                else -> "RED"
             }
 
             val milestone = when (base.streakDays) {

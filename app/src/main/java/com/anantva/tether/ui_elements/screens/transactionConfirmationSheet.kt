@@ -10,8 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,7 +23,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anantva.tether.data.local.entity.SpendingCategories
-import com.anantva.tether.data.local.entity.TxnCategory
 
 private val TetherRed  = Color(0xFFE53935)
 private val CardBg     = Color(0xFF1A1A1A)
@@ -40,6 +37,7 @@ fun TransactionConfirmationSheet(
     onAmountChange:  (Double) -> Unit,
     onMerchantChange:(String) -> Unit,
     onCategoryChange:(String) -> Unit,
+    suggestCategory: suspend (merchant: String, isDebit: Boolean) -> String,
     onToggleRecurring: () -> Unit,
     onToggleType:    () -> Unit,
     onConfirm:       () -> Unit,
@@ -50,9 +48,22 @@ fun TransactionConfirmationSheet(
     var merchantText by remember(state.isVisible) { mutableStateOf(state.merchant) }
     var selectedCategory by remember(state.isVisible) { mutableStateOf(state.category) }
     var isRecurring by remember(state.isVisible) { mutableStateOf(state.isRecurring) }
+    var hasManualCategoryOverride by remember(state.isVisible) { mutableStateOf(false) }
 
     // Sync recurring toggle to parent state
     LaunchedEffect(isRecurring) { onToggleRecurring() }
+
+    LaunchedEffect(merchantText, state.isDebit, hasManualCategoryOverride, state.isVisible) {
+        if (!state.isVisible || hasManualCategoryOverride) return@LaunchedEffect
+
+        val suggestedCategory = if (merchantText.isBlank()) {
+            if (state.isDebit) SpendingCategories.OTHER else SpendingCategories.INCOME
+        } else {
+            suggestCategory(merchantText.trim(), state.isDebit)
+        }
+        selectedCategory = suggestedCategory
+        onCategoryChange(suggestedCategory)
+    }
 
     // Countdown arc animation
     val countdownFraction = state.countdown / 15f
@@ -199,48 +210,15 @@ fun TransactionConfirmationSheet(
 
             Text("Category", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                CATEGORY_LIST.chunked(3).forEach { rowCategories ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        rowCategories.forEach { cat ->
-                            val isSelected = selectedCategory == cat
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) accentColor.copy(alpha = 0.25f) else Color(0xFF2A2A2A))
-                                    .border(
-                                        width = if (isSelected) 1.dp else 0.dp,
-                                        color = if (isSelected) accentColor else Color.Transparent,
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    .clickable {
-                                        selectedCategory = cat
-                                        onCategoryChange(cat)
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = cat,
-                                    fontSize = 10.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) accentColor else GrimeGrey,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                        repeat(3 - rowCategories.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
+            CategorySelectorField(
+                selectedCategory = selectedCategory,
+                accentColor = accentColor,
+                onCategorySelected = { category ->
+                    hasManualCategoryOverride = true
+                    selectedCategory = category
+                    onCategoryChange(category)
                 }
-            }
+            )
 
             Spacer(Modifier.height(14.dp))
 

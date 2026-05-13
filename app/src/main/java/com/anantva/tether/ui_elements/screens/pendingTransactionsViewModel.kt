@@ -31,6 +31,9 @@ class PendingTransactionsViewModel @Inject constructor(
     private val _toastEvent = Channel<TransactionToastEvent>(Channel.BUFFERED)
     val toastEvent = _toastEvent.receiveAsFlow()
 
+    suspend fun suggestCategory(merchant: String, isDebit: Boolean): String =
+        tetherRepository.suggestCategory(merchant, if (isDebit) "Expense" else "Credit")
+
     val uiState: StateFlow<PendingTransactionsUiState> =
         tetherRepository.observePendingTransactions()
             .map { list -> PendingTransactionsUiState(transactions = list.sortedByDescending { it.date }) }
@@ -81,4 +84,3 @@ class PendingTransactionsViewModel @Inject constructor(
         }
     }
 }
-

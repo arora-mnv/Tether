@@ -1,66 +1,41 @@
-# AGENTS.md — Tether
+# AGENTS.md
 
-## Build Commands
-```bash
-./gradlew assembleDebug        # Build debug APK
-./gradlew test                 # Run unit tests (JUnit)
-./gradlew connectedAndroidTest # Run instrumented tests (requires device)
-./gradlew installDebug         # Install on connected device
-./gradlew clean                # Clean build artifacts
-```
-JDK path (in `gradle.properties`): `/Applications/Android Studio.app/Contents/jbr/Contents/Home`
+## Investigation
+- Do not scan the whole project; start from `AGENTS.md`, `CLAUDE.md`, root Gradle files, `app/build.gradle.kts`, and the directly related source files.
+- For bugs, identify the entry point, trace only the execution path, and stop at the exact failing logic; report root cause, exact line/logic issue, and fix rationale.
+- Trust executable Gradle/config files over prose if they conflict.
 
-## Plugin Order (Critical)
-In `app/build.gradle.kts`, plugins must be in this order:
-1. `android-application` → 2. `kotlin-android` → 3. `kotlin-compose` → 4. `kotlin-ksp` → 5. `hilt-android` → 6. `google-services`
+## Project Shape
+- Single Android module `:app`; namespace/application id is `com.anantva.tether`.
+- Kotlin + Jetpack Compose app with Hilt, Room, DataStore Preferences, Firebase Auth, and Firestore.
+- Source root is `app/src/main/java/com/anantva/tether/`; filenames intentionally use lower camel case in many places, so do not rename to PascalCase for style cleanup.
+- App entry is `TetherApplication` (`@HiltAndroidApp`) into `MainActivity` (`@AndroidEntryPoint`, Compose Navigation).
 
-## Architecture
-- UI: Jetpack Compose, ViewModels with `StateFlow<UiState>`, `combine()` for multi-source flows
-- DI: Hilt (`DatabaseModule`, `DataStoreModule`, `AuthModule` in `SingletonComponent`)
-- Navigation: Compose, single Activity, routes: `splash` → `onboarding` → `setup` → `auth` → `nameInput` → `dashboard`
-- Data: Room (local) + Firestore (cloud), `TetherRepository` routes via `isCloudStorage` DataStore pref
-- Cloud sync: Only CONFIRMED transactions sync to Firestore; PENDING rows stay local forever
+## Commands
+- Build debug APK: `./gradlew assembleDebug`.
+- Install on device/emulator: `./gradlew installDebug`.
+- Unit tests: `./gradlew test` or focused `./gradlew testDebugUnitTest --tests 'fully.qualified.TestName'`.
+- Instrumented tests require a connected device/emulator: `./gradlew connectedAndroidTest`.
+- Clean only when needed: `./gradlew clean`.
 
-## Key Patterns
-- **Repository Routing**: `TetherRepository` checks `isCloudStorage` → Room or Firestore, both expose `Flow<List<TransactionEntity>>`
-- **Firestore Structure**:
-  ```
-  users/{userId}/transactions/{transactionId}
-  users/{userId}/goals/{goalId}
-  users/{userId}  (UserProfileEntity as document)
-  ```
-- **Pending Transactions**: SMS-derived PENDING rows are local-only, never synced
+## Gradle / Toolchain Gotchas
+- `gradle.properties` pins Java to Android Studio JBR at `/Applications/Android Studio.app/Contents/jbr/Contents/Home`; builds expect Java 17.
+- Keep `app/build.gradle.kts` plugin order: Android application, Kotlin Android, Kotlin Compose, KSP, Hilt, Google Services.
+- Lint is configured with `abortOnError = false`; disabled checks are `NullSafeMutableLiveData`, `FlowOperatorInvokedInComposition`, `FrequentlyChangingValue`, and `RememberInComposition`.
+- Dependencies are mixed: version catalog for core plugins/libs, hardcoded versions for Firebase, Room, DataStore, Navigation, Google Sign-In, and coroutine Play Services.
 
-## File Naming Convention
-lowercase camelCase (e.g., `dashboardScreen.kt`, `tetherRepository.kt`) — non-standard Android convention
+## Runtime Flow
+- Startup path in `MainActivity`: splash with minimum 3 seconds, DataStore onboarding/setup flags, then onboarding → setup → dashboard; dashboard redirects to auth only when cloud sync is enabled and user is not logged in.
+- Setup and app preferences live in DataStore named `tether_prefs` via `DataStoreModule` and `UserPreferencesRepository`.
+- Repository routing is centralized in `TetherRepository`: when `isCloudStorage` is true and a Firebase uid exists, use Firestore; otherwise use Room.
+- Login-triggered cloud sync is launched from `MainActivity` through `SyncManager.syncAll(userId)`.
 
-## Auth
-- `FirebaseAuthManager`: Google Sign-In + Phone OTP
-- `AuthRepository`: Email/password (delegates to FirebaseAuth)
-- `AuthViewModel` (`ui_elements/screens/`): Auth UI state, profile checks
-- `UserRepository`: Merges FirebaseAuth + Firestore + DataStore into `StateFlow<UserData>`
+## Data / Sync Gotchas
+- Room database file is `tether_database`; `AppDatabase` is version 6, `exportSchema = false`, and still uses `fallbackToDestructiveMigration()` after explicit migrations.
+- If changing Room entities, update `AppDatabase` entities/version/migrations and the DAO/repository path that consumes them.
+- Pending transactions are local transient state; do not add Firestore sync for pending review items unless the product behavior changes.
+- Banking notifications enter through `services.TetherNotificationListenerService`; parsing/category/dedup logic lives under `data/parser/`.
 
-## Important Conventions
-- All entities have `toMap()` for Firestore writes
-- `TetherRepository` has inline `toTransactionEntity()`, `toGoalEntity()`, `toUserProfileEntity()` parsers for `Map<String, Any?>`
-- Lint: `ignoreTestSources = true`, `abortOnError = false`; several checks disabled (see `app/build.gradle.kts`)
-
-## Firebase Config
-- Requires `google-services.json` in `app/`
-- Google Sign-In needs `default_web_client_id` in `strings.xml`
-- Use `FirebaseAuthManager.getAppSigningSha1(context)` for SHA-1
-
-## Testing
-- Unit tests: `app/src/test/` (e.g., `TransactionParserTest`)
-- Instrumented tests: `app/src/androidTest/`
-- No mocking framework beyond JUnit
-
-## Firestore Safety Rules
-- No `!!` (unsafe null assertions) in data/Firestore code
-- Wrap all `.get().await()`, `.set().await()` in try-catch for `FirebaseFirestoreException` (offline, permission denied, API disabled)
-- Snapshot listeners: Check `snapshot?.exists() == true` before access; log errors with `Log.e(TAG, "message", error)`; never crash app
-- Firestore calls must not crash the app; return empty data or error state to UI
-
-## UI Rules
-- Show user-friendly error messages (Toast/Snackbar) for backend failures
-- UI must not crash if data fetching fails; show fallback/empty state
+## Firebase / Auth
+- `app/google-services.json` is required and present; Google Services plugin is applied in `app/build.gradle.kts`.
+- Google Sign-In uses `R.string.default_web_client_id`; if auth fails with code 10, use `FirebaseAuthManager.getAppSigningSha1()` and check Firebase SHA-1/package/OAuth configuration.

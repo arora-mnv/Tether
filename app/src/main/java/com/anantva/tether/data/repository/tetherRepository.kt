@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.tasks.await
+import kotlin.math.roundToInt
 private const val TAG = "TetherFirestore"
 
 class TetherRepository(
@@ -48,6 +49,76 @@ class TetherRepository(
 
     private fun userDoc(uid: String) =
         firestore.collection("users").document(uid)
+
+    private suspend fun confirmedTransactionsInRange(startOfDay: Long, endOfDay: Long): List<TransactionEntity> {
+        return if (isCloud() && uid().isNotEmpty()) {
+            fetchDayTransactions(uid(), startOfDay, endOfDay)
+                .filter { it.status == "CONFIRMED" }
+        } else {
+            transactionDao.getConfirmedTransactionsInRange(startOfDay, endOfDay)
+        }
+    }
+
+    private suspend fun resolveCategory(
+        merchant: String,
+        type: String,
+        selectedCategory: String
+    ): String {
+        if (selectedCategory.isNotBlank() && selectedCategory != SpendingCategories.OTHER) {
+            return selectedCategory
+        }
+        return categoryEngine.categorize(merchant, type)
+    }
+
+    private suspend fun enrichTransaction(transaction: TransactionEntity): TransactionEntity {
+        val resolvedCategory = resolveCategory(
+            merchant = transaction.merchant,
+            type = transaction.type,
+            selectedCategory = transaction.category
+        )
+        val spendNature = if (transaction.type == "Expense") {
+            SpendingCategories.spendNatureFor(
+                category = resolvedCategory,
+                merchant = transaction.merchant,
+                txnCategory = transaction.txnCategory
+            ).toDbValue()
+        } else {
+            transaction.spendNature
+        }
+        return transaction.copy(
+            category = resolvedCategory,
+            spendNature = spendNature
+        )
+    }
+
+    private suspend fun persistCategoryLearning(transaction: TransactionEntity) {
+        if (transaction.type != "Expense") return
+
+        val corrections = categoryEngine.saveCorrection(transaction.merchant, transaction.category)
+        if (corrections.isEmpty() || !isCloud() || uid().isEmpty()) return
+
+        corrections.forEach { correction ->
+            firestoreRepository.saveCategoryCorrection(uid(), correction)
+        }
+    }
+
+    private fun streakPenaltyAmount(transaction: TransactionEntity): Int {
+        if (transaction.status != "CONFIRMED" || transaction.type != "Expense") return 0
+
+        val penaltyWeight = SpendingCategories.streakPenaltyWeight(
+            category = transaction.category,
+            merchant = transaction.merchant,
+            txnCategory = transaction.txnCategory
+        )
+        return (transaction.amount * penaltyWeight).roundToInt()
+    }
+
+    private fun spendNatureFor(transaction: TransactionEntity) =
+        SpendingCategories.spendNatureFor(
+            category = transaction.category,
+            merchant = transaction.merchant,
+            txnCategory = transaction.txnCategory
+        )
 
     /** Safely parse a Firestore document map into a TransactionEntity. */
     private fun Map<String, Any?>.toTransactionEntity() = TransactionEntity(
@@ -396,13 +467,8 @@ class TetherRepository(
     }
 
     suspend fun getStreakRelevantSpent(startOfDay: Long, endOfDay: Long): Int {
-        if (isCloud() && uid().isNotEmpty()) {
-            return fetchDayTransactions(uid(), startOfDay, endOfDay)
-                .filter { it.status == "CONFIRMED" && it.type == "Expense" && it.isStreakRelevant }
-                .sumOf { it.amount }
-                .toInt()
-        }
-        return transactionDao.getStreakRelevantSpent(startOfDay, endOfDay)
+        return confirmedTransactionsInRange(startOfDay, endOfDay)
+            .sumOf(::streakPenaltyAmount)
     }
 
     suspend fun getConfirmedTransactionCount(startOfDay: Long, endOfDay: Long): Int {
@@ -433,11 +499,10 @@ class TetherRepository(
 
     suspend fun addTransaction(transaction: TransactionEntity): Boolean {
         return try {
-            val category = categoryEngine.categorize(transaction.merchant)
-            val txn = transaction.copy(category = category)
-            // Use upsert to handle both insert and update cases
+            val txn = enrichTransaction(transaction)
             transactionDao.upsertTransaction(txn)
             Log.d("TetherTxn", "Transaction upserted locally, txnId=${txn.transactionId}")
+            persistCategoryLearning(txn)
             
             if (isCloud()) {
                 val uid = uid()
@@ -472,10 +537,11 @@ class TetherRepository(
     suspend fun updateTransactionCategory(transactionId: Long, newCategory: String): Boolean {
         return try {
             val txn = transactionDao.getTransactionById(transactionId) ?: return false
-            transactionDao.updateTransaction(txn.copy(category = newCategory))
-            categoryEngine.saveCorrection(txn.merchant, newCategory)
+            val updatedTxn = enrichTransaction(txn.copy(category = newCategory))
+            transactionDao.updateTransaction(updatedTxn)
+            persistCategoryLearning(updatedTxn)
             if (isCloud() && uid().isNotEmpty()) {
-                saveTransactionToCloud(uid(), txn.copy(category = newCategory))
+                saveTransactionToCloud(uid(), updatedTxn)
             }
             true
         } catch (e: FirebaseFirestoreException) {
@@ -506,18 +572,22 @@ class TetherRepository(
     fun observePendingTransactions(): Flow<List<TransactionEntity>> =
         transactionDao.observePendingTransactions()
 
+    suspend fun suggestCategory(merchant: String, type: String): String =
+        categoryEngine.categorize(merchant, type)
+
     suspend fun updateTransaction(transaction: TransactionEntity): Boolean {
         return try {
-            // Use upsert to handle both insert and update cases
-            transactionDao.upsertTransaction(transaction)
-            Log.d("TetherTxn", "Transaction upserted locally, txnId=${transaction.transactionId}")
+            val enrichedTransaction = enrichTransaction(transaction)
+            transactionDao.upsertTransaction(enrichedTransaction)
+            Log.d("TetherTxn", "Transaction upserted locally, txnId=${enrichedTransaction.transactionId}")
+            persistCategoryLearning(enrichedTransaction)
             
             if (isCloud()) {
                 val uid = uid()
                 Log.d(TAG, "updateTransaction: isCloud=true, uid='$uid'")
                 if (uid.isNotEmpty()) {
-                    Log.d("TetherTxn", "Saving transaction to cloud, uid=$uid, txnId=${transaction.transactionId}")
-                    val cloudSuccess = saveTransactionToCloud(uid, transaction)
+                    Log.d("TetherTxn", "Saving transaction to cloud, uid=$uid, txnId=${enrichedTransaction.transactionId}")
+                    val cloudSuccess = saveTransactionToCloud(uid, enrichedTransaction)
                     Log.d("TetherTxn", "Cloud save result: $cloudSuccess")
                     if (!cloudSuccess) {
                         Log.e("TetherTxn", "Error: Cloud save returned false")
@@ -580,7 +650,6 @@ class TetherRepository(
         category:   String = SpendingCategories.OTHER,
         txnCategory: String = com.anantva.tether.data.local.entity.TxnCategory.NORMAL.toDbValue()
     ): Boolean {
-        // STEP 1: ALWAYS update local DB first (source of truth)
         Log.d("TetherTxn", "Confirming transaction locally, txnId=$id")
         val localSuccess = updateLocalTransaction(id, amount, merchant, type, category, txnCategory)
         
@@ -590,8 +659,9 @@ class TetherRepository(
         }
         
         Log.d("TetherTxn", "Local update successful, txnId=$id")
+        val localTxn = transactionDao.getTransactionById(id) ?: return true
+        persistCategoryLearning(localTxn)
         
-        // STEP 2: If cloud sync enabled AND user logged in, sync to cloud
         if (!isCloud()) {
             Log.d("TetherTxn", "Cloud sync disabled, skipping cloud save")
             return true
@@ -607,46 +677,10 @@ class TetherRepository(
         Log.d("TetherTxn", "Saving transaction to cloud, uid=$uid, txnId=$id")
         
         return try {
-            // Get existing transaction from cloud (might not exist yet)
-            val existing = try {
-                getTransactionById(id)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to get transaction from cloud, id=$id", e)
-                null
-            }
-            
-            // Prepare transaction data for cloud
-            val cloudTxn = if (existing != null) {
-                existing.copy(
-                    amount = amount,
-                    merchant = merchant,
-                    type = type,
-                    status = "CONFIRMED",
-                    category = category,
-                    txnCategory = txnCategory
-                )
-            } else {
-                // Transaction doesn't exist in cloud yet - create new one
-                Log.d("TetherTxn", "Transaction not in cloud yet, creating new. txnId=$id")
-                com.anantva.tether.data.local.entity.TransactionEntity(
-                    transactionId = id,
-                    amount = amount,
-                    merchant = merchant,
-                    type = type,
-                    source = "Manual",
-                    date = System.currentTimeMillis(),
-                    status = "CONFIRMED",
-                    category = category,
-                    txnCategory = txnCategory
-                )
-            }
-            
-            // Save to cloud
-            val cloudSuccess = saveTransactionToCloud(uid, cloudTxn)
+            val cloudSuccess = saveTransactionToCloud(uid, localTxn)
             if (!cloudSuccess) {
                 Log.e("TetherTxn", "Firestore write failed: saveTransactionToCloud returned false")
                 Log.e(TAG, "confirmAndUpdateTransaction: cloud save returned false for txnId=$id")
-                // Local save already succeeded, so return true
                 return true
             }
             
@@ -664,14 +698,12 @@ class TetherRepository(
                 Log.e("TetherTxn", "Error: $msg")
             }
             
-            // Local save already succeeded, so return true
             Log.d("TetherTxn", "Local save succeeded, ignoring cloud error")
             true
         } catch (e: Exception) {
             Log.e(TAG, "confirmAndUpdateTransaction error for txnId=$id", e)
             Log.e("TetherTxn", "Error: ${e.message ?: "Unknown error"}")
             
-            // Local save already succeeded, so return true
             true
         }
     }
@@ -688,9 +720,8 @@ class TetherRepository(
             val existing = transactionDao.getTransactionById(id)
 
             if (existing == null) {
-                // Transaction doesn't exist - INSERT new transaction
                 Log.d("TetherTxn", "Transaction not found locally, inserting new. txnId=$id")
-                val newTxn = TransactionEntity(
+                val newTxn = enrichTransaction(TransactionEntity(
                     transactionId = id,
                     amount = amount,
                     merchant = merchant,
@@ -700,15 +731,13 @@ class TetherRepository(
                     status = "CONFIRMED",
                     category = category,
                     txnCategory = txnCategory
-                )
+                ))
                 transactionDao.upsertTransaction(newTxn)
                 Log.d("TetherTxn", "Transaction inserted successfully, txnId=$id")
                 true
             } else {
-                // Transaction exists - UPDATE (use explicit non-null variable)
-                val existingTxn = existing // Smart cast to non-null
-                transactionDao.upsertTransaction(
-                    existingTxn.copy(
+                val updatedTxn = enrichTransaction(
+                    existing.copy(
                         amount = amount,
                         merchant = merchant,
                         type = type,
@@ -717,6 +746,7 @@ class TetherRepository(
                         txnCategory = txnCategory
                     )
                 )
+                transactionDao.upsertTransaction(updatedTxn)
                 Log.d("TetherTxn", "Transaction updated successfully, txnId=$id")
                 true
             }
@@ -795,33 +825,30 @@ class TetherRepository(
     }
 
     suspend fun getDiscretionarySpend(startOfDay: Long, endOfDay: Long): Int {
-        if (isCloud() && uid().isNotEmpty()) {
-            return fetchDayTransactions(uid(), startOfDay, endOfDay)
-                .filter { it.status == "CONFIRMED" && it.type == "Expense" && it.isStreakRelevant }
-                .sumOf { it.amount }
-                .toInt()
-        }
-        return transactionDao.getDiscretionarySpend(startOfDay, endOfDay)
+        return confirmedTransactionsInRange(startOfDay, endOfDay)
+            .filter { txn ->
+                txn.type == "Expense" && SpendingCategories.isDiscretionarySpend(
+                    category = txn.category,
+                    merchant = txn.merchant,
+                    txnCategory = txn.txnCategory
+                )
+            }
+            .sumOf { it.amount }
+            .toInt()
     }
 
     suspend fun getWantSpend(startOfDay: Long, endOfDay: Long): Int {
-        if (isCloud() && uid().isNotEmpty()) {
-            return fetchDayTransactions(uid(), startOfDay, endOfDay)
-                .filter { it.status == "CONFIRMED" && it.type == "Expense" && it.spendNature == "WANT" }
-                .sumOf { it.amount }
-                .toInt()
-        }
-        return transactionDao.getWantSpend(startOfDay, endOfDay)
+        return confirmedTransactionsInRange(startOfDay, endOfDay)
+            .filter { it.type == "Expense" && spendNatureFor(it) == com.anantva.tether.data.local.entity.SpendNature.WANT }
+            .sumOf { it.amount }
+            .toInt()
     }
 
     suspend fun getNeedSpend(startOfDay: Long, endOfDay: Long): Int {
-        if (isCloud() && uid().isNotEmpty()) {
-            return fetchDayTransactions(uid(), startOfDay, endOfDay)
-                .filter { it.status == "CONFIRMED" && it.type == "Expense" && it.spendNature == "NEED" }
-                .sumOf { it.amount }
-                .toInt()
-        }
-        return transactionDao.getNeedSpend(startOfDay, endOfDay)
+        return confirmedTransactionsInRange(startOfDay, endOfDay)
+            .filter { it.type == "Expense" && spendNatureFor(it) == com.anantva.tether.data.local.entity.SpendNature.NEED }
+            .sumOf { it.amount }
+            .toInt()
     }
 
     suspend fun getCategoryBreakdown(startOfDay: Long, endOfDay: Long): List<CategorySpend> {

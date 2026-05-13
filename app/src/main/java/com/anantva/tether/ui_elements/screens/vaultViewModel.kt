@@ -75,6 +75,9 @@ class VaultViewModel @Inject constructor(
         sort.value = value
     }
 
+    suspend fun suggestCategory(merchant: String, isDebit: Boolean): String =
+        tetherRepository.suggestCategory(merchant, if (isDebit) "Expense" else "Credit")
+
     fun updateTransaction(updated: TransactionEntity) {
         viewModelScope.launch {
             Log.d("TetherTxn", "Saving transaction started")
@@ -95,4 +98,3 @@ class VaultViewModel @Inject constructor(
         }
     }
 }
-

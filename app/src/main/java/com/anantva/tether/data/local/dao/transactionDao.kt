@@ -101,6 +101,16 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE status = 'CONFIRMED' ORDER BY date DESC")
     suspend fun getAllConfirmedTransactions(): List<TransactionEntity>
 
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE status = 'CONFIRMED'
+          AND date BETWEEN :startOfDay AND :endOfDay
+        ORDER BY date DESC
+        """
+    )
+    suspend fun getConfirmedTransactionsInRange(startOfDay: Long, endOfDay: Long): List<TransactionEntity>
+
     @Query("DELETE FROM transactions WHERE status = 'CONFIRMED'")
     suspend fun deleteAllConfirmedTransactions()
 

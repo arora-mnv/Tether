@@ -3,6 +3,7 @@ package com.anantva.tether.insights
 import com.anantva.tether.data.local.dao.CategorySpend
 import com.anantva.tether.data.local.entity.SpendingCategories
 import com.anantva.tether.data.local.entity.TransactionEntity
+import com.anantva.tether.data.local.entity.TxnCategory
 import com.anantva.tether.data.repository.TetherRepository
 import java.time.Instant
 import java.time.LocalDate
@@ -58,6 +59,8 @@ class InsightsEngine @Inject constructor(
             val txnDate = Instant.ofEpochMilli(txn.date).atZone(zone).toLocalDate()
             txnDate == date && txn.type == "Expense"
         }
+        val previousWeekAverage = dailyAverageBefore(date, allConfirmed)
+        val recurringTxnCount = dayTransactions.count { it.typedCategory == TxnCategory.RECURRING }
 
         val normalTxnCount = dayTransactions.count { it.isStreakRelevant }
 
@@ -76,7 +79,11 @@ class InsightsEngine @Inject constructor(
             topCategoryAmount = topCategoryAmount,
             needWantRatio = needWantRatio,
             healthScore = healthScore,
-            normalTxnCount = normalTxnCount
+            normalTxnCount = normalTxnCount,
+            recurringTxnCount = recurringTxnCount,
+            wantSpend = wantSpend,
+            previousWeekAverage = previousWeekAverage,
+            dayTransactions = dayTransactions
         )
 
         return DailyInsight(
@@ -209,19 +216,48 @@ class InsightsEngine @Inject constructor(
         topCategoryAmount: Int,
         needWantRatio: Float,
         healthScore: Float,
-        normalTxnCount: Int
+        normalTxnCount: Int,
+        recurringTxnCount: Int,
+        wantSpend: Int,
+        previousWeekAverage: Int,
+        dayTransactions: List<TransactionEntity>
     ): String {
         return when {
-            totalSpend == 0 -> "Zero spending today. The streak is safe."
-            healthScore >= 0.8f -> "Your spending is on point today."
-            needWantRatio >= 3f -> "All needs, zero wants. Disciplined."
-            needWantRatio < 0.5f && discretionarySpend > 500 -> "Heavy on wants today. Watch it."
-            topCategory == SpendingCategories.FOOD && topCategoryAmount > 1000 -> "Food's eating your budget today."
-            topCategory == SpendingCategories.SHOPPING && topCategoryAmount > 2000 -> "Shopping spree detected."
-            normalTxnCount >= 5 -> "$normalTxnCount transactions today. That's a lot of taps."
-            discretionarySpend > 0 -> "₹$discretionarySpend in discretionary spend today."
-            else -> "All essential spends today. Good control."
+            totalSpend == 0 && previousWeekAverage > 0 -> "Quiet day. Your streak appreciates it."
+            totalSpend == 0 -> "No unnecessary hits today. Nice."
+            dayTransactions.isNotEmpty() && dayTransactions.all { txn ->
+                SpendingCategories.streakPenaltyWeight(txn.category, txn.merchant, txn.txnCategory) <= 0.25
+            } && recurringTxnCount > 0 -> "Subscriptions carried the day. Nothing impulsive."
+            dayTransactions.isNotEmpty() && dayTransactions.all { txn ->
+                SpendingCategories.streakPenaltyWeight(txn.category, txn.merchant, txn.txnCategory) <= 0.25
+            } -> "Only the fixed stuff showed up today."
+            previousWeekAverage > 0 && totalSpend < (previousWeekAverage * 0.6f) -> "You're spending slower than usual this week."
+            wantSpend == 0 && discretionarySpend == 0 -> "All needs today. No random damage."
+            topCategory == SpendingCategories.FOOD && topCategoryAmount < 500 -> "Your food spending cooled off today."
+            topCategory == SpendingCategories.FOOD -> "Food took the lead today. Could've been worse."
+            topCategory == SpendingCategories.SHOPPING -> "Shopping got the loudest vote today."
+            topCategory == SpendingCategories.ENTERTAINMENT -> "Entertainment tried to steal the scene today."
+            normalTxnCount >= 5 -> "$normalTxnCount taps today. A quieter card tomorrow helps."
+            healthScore >= 0.8f || needWantRatio >= 3f -> "Clean day. You spent with intent."
+            discretionarySpend > totalSpend * 0.6f -> "Most of today’s damage was optional."
+            else -> "Steady day. Nothing chaotic."
         }
+    }
+
+    private fun dailyAverageBefore(date: LocalDate, transactions: List<TransactionEntity>): Int {
+        val startDate = date.minusDays(7)
+        val trailingTransactions = transactions.filter { txn ->
+            if (txn.type != "Expense" || txn.status != "CONFIRMED") return@filter false
+            val txnDate = Instant.ofEpochMilli(txn.date).atZone(zone).toLocalDate()
+            txnDate >= startDate && txnDate < date
+        }
+
+        if (trailingTransactions.isEmpty()) return 0
+
+        return trailingTransactions
+            .groupBy { Instant.ofEpochMilli(it.date).atZone(zone).toLocalDate() }
+            .values
+            .sumOf { day -> day.sumOf { it.amount }.toInt() } / 7
     }
 
     private fun generateWeeklyInsight(

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,6 +35,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,7 +49,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anantva.tether.data.local.entity.SpendingCategories
-import com.anantva.tether.data.local.entity.TxnCategory
 
 private val TetherRed = Color(0xFFE53935)
 private val CardBg = Color(0xFF1A1A1A)
@@ -71,6 +73,128 @@ val CATEGORY_LIST = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun CategorySelectorField(
+    selectedCategory: String,
+    accentColor: Color,
+    onCategorySelected: (String) -> Unit
+) {
+    var showSheet by remember { mutableStateOf(false) }
+    var searchQuery by remember(showSheet) { mutableStateOf("") }
+    val filteredCategories = remember(searchQuery) {
+        val query = searchQuery.trim()
+        if (query.isBlank()) {
+            CATEGORY_LIST
+        } else {
+            CATEGORY_LIST.filter { it.contains(query, ignoreCase = true) }
+        }
+    }
+
+    Box {
+        OutlinedTextField(
+            value = selectedCategory,
+            onValueChange = {},
+            readOnly = true,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = "Open categories",
+                    tint = GrimeGrey
+                )
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = accentColor,
+                unfocusedBorderColor = Color(0xFF2A2A2A),
+                cursorColor = accentColor
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { showSheet = true }
+        )
+    }
+
+    if (showSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            containerColor = CardBg
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Choose category",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                Spacer(Modifier.height(14.dp))
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    singleLine = true,
+                    placeholder = {
+                        Text("Search categories", color = GrimeGrey)
+                    },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = accentColor,
+                        unfocusedBorderColor = Color(0xFF2A2A2A),
+                        cursorColor = accentColor
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    filteredCategories.forEach { category ->
+                        val isSelected = selectedCategory == category
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) accentColor.copy(alpha = 0.18f) else DarkBg)
+                                .border(
+                                    width = if (isSelected) 1.dp else 0.dp,
+                                    color = if (isSelected) accentColor else Color.Transparent,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clickable {
+                                    onCategorySelected(category)
+                                    showSheet = false
+                                }
+                                .padding(horizontal = 14.dp, vertical = 14.dp)
+                        ) {
+                            Text(
+                                text = category,
+                                color = if (isSelected) Color.White else GrimeGrey,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun TransactionEditSheet(
     title: String,
     initialAmount: Double,
@@ -79,6 +203,7 @@ fun TransactionEditSheet(
     initialCategory: String = SpendingCategories.OTHER,
     initialIsRecurring: Boolean = false,
     onDismiss: () -> Unit,
+    suggestCategory: suspend (merchant: String, isDebit: Boolean) -> String,
     onSave: (amount: Double, merchant: String, isDebit: Boolean, category: String, isRecurring: Boolean) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
@@ -88,10 +213,21 @@ fun TransactionEditSheet(
     var selectedCategory by remember { mutableStateOf(initialCategory) }
     var isRecurring by remember { mutableStateOf(initialIsRecurring) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var hasManualCategoryOverride by remember { mutableStateOf(false) }
 
     val accentColor = if (isDebit) TetherRed else CreditGreen
     val amountValue = amountText.toDoubleOrNull()
     val canSave = amountValue != null && amountValue > 0.0 && merchantText.trim().isNotEmpty()
+
+    LaunchedEffect(merchantText, isDebit, hasManualCategoryOverride) {
+        if (hasManualCategoryOverride) return@LaunchedEffect
+
+        selectedCategory = if (merchantText.isBlank()) {
+            if (isDebit) SpendingCategories.OTHER else SpendingCategories.INCOME
+        } else {
+            suggestCategory(merchantText.trim(), isDebit)
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -211,46 +347,14 @@ fun TransactionEditSheet(
 
             Text("Category", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                CATEGORY_LIST.chunked(3).forEach { rowCategories ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        rowCategories.forEach { cat ->
-                            val isSelected = selectedCategory == cat
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) accentColor.copy(alpha = 0.25f) else Color(0xFF2A2A2A))
-                                    .border(
-                                        width = if (isSelected) 1.dp else 0.dp,
-                                        color = if (isSelected) accentColor else Color.Transparent,
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    .clickable { selectedCategory = cat }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = cat,
-                                    fontSize = 10.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) accentColor else GrimeGrey,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                        // Fill remaining space if row has less than 3 items
-                        repeat(3 - rowCategories.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
+            CategorySelectorField(
+                selectedCategory = selectedCategory,
+                accentColor = accentColor,
+                onCategorySelected = { category ->
+                    hasManualCategoryOverride = true
+                    selectedCategory = category
                 }
-            }
+            )
 
             Spacer(Modifier.height(14.dp))
 
@@ -360,4 +464,3 @@ fun TransactionEditSheet(
         )
     }
 }
-

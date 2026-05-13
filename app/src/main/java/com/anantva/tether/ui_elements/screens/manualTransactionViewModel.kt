@@ -26,6 +26,9 @@ class ManualTransactionViewModel @Inject constructor(
     private val _toastEvent = Channel<TransactionToastEvent>(Channel.BUFFERED)
     val toastEvent = _toastEvent.receiveAsFlow()
 
+    suspend fun suggestCategory(merchant: String, isDebit: Boolean): String =
+        tetherRepository.suggestCategory(merchant, if (isDebit) "Expense" else "Credit")
+
     fun addManualTransaction(
         amount: Double,
         merchant: String,
@@ -60,4 +63,3 @@ class ManualTransactionViewModel @Inject constructor(
         }
     }
 }
-

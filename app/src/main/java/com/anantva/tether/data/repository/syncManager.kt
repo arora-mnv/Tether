@@ -1,6 +1,7 @@
 package com.anantva.tether.data.repository
 
 import android.util.Log
+import com.anantva.tether.data.local.dao.CategoryCorrectionDao
 import com.anantva.tether.data.local.dao.TransactionDao
 import com.anantva.tether.data.local.dao.GoalDao
 import com.anantva.tether.data.local.dao.UserProfileDao
@@ -29,6 +30,7 @@ class SyncManager @Inject constructor(
     private val transactionDao: TransactionDao,
     private val goalDao: GoalDao,
     private val userProfileDao: UserProfileDao,
+    private val categoryCorrectionDao: CategoryCorrectionDao,
     private val firestoreRepository: FirestoreRepository,
     private val preferencesRepository: UserPreferencesRepository
 ) {
@@ -76,6 +78,15 @@ class SyncManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(SYNC_TAG, "Preferences sync failed", e)
             emit(SyncResult.Error("Preferences sync failed: ${e.message}"))
+            return@flow
+        }
+
+        emit(SyncResult.Syncing("Syncing category learning..."))
+        try {
+            syncCategoryCorrections(uid)
+        } catch (e: Exception) {
+            Log.e(SYNC_TAG, "Category correction sync failed", e)
+            emit(SyncResult.Error("Category learning sync failed: ${e.message}"))
             return@flow
         }
 
@@ -214,5 +225,34 @@ class SyncManager @Inject constructor(
         preferencesRepository.applyMap(merged)
 
         Log.d(SYNC_TAG, "Preferences sync complete")
+    }
+
+    private suspend fun syncCategoryCorrections(uid: String) {
+        val localCorrections = categoryCorrectionDao.getAllCorrections()
+        val cloudCorrections = firestoreRepository.getCategoryCorrections(uid)
+
+        val localMap = localCorrections.associateBy { it.merchantKey }
+        val cloudMap = cloudCorrections.associateBy { it.merchantKey }
+
+        val localOnly = localMap.keys - cloudMap.keys
+        localOnly.forEach { key ->
+            firestoreRepository.saveCategoryCorrection(uid, localMap.getValue(key))
+        }
+
+        val cloudOnly = cloudMap.keys - localMap.keys
+        cloudOnly.forEach { key ->
+            categoryCorrectionDao.insertCorrection(cloudMap.getValue(key))
+        }
+
+        val commonKeys = localMap.keys.intersect(cloudMap.keys)
+        commonKeys.forEach { key ->
+            val local = localMap.getValue(key)
+            val cloud = cloudMap.getValue(key)
+            if (local.category != cloud.category) {
+                firestoreRepository.saveCategoryCorrection(uid, local)
+            }
+        }
+
+        Log.d(SYNC_TAG, "Category correction sync complete")
     }
 }
