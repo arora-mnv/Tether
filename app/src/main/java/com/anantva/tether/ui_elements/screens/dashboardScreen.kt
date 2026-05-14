@@ -12,6 +12,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -283,7 +285,7 @@ fun DashboardScreen(
                 onAmountChange   = pendingViewModel::updateAmount,
                 onMerchantChange = pendingViewModel::updateMerchant,
                 onCategoryChange = pendingViewModel::updateCategory,
-                suggestCategory  = pendingViewModel::suggestCategory,
+                suggestTransactionDetails = pendingViewModel::suggestTransactionDetails,
                 onToggleRecurring = pendingViewModel::toggleRecurring,
                 onToggleType     = pendingViewModel::toggleType,
                 onConfirm        = pendingViewModel::confirm,
@@ -301,7 +303,7 @@ fun DashboardScreen(
             initialCategory = com.anantva.tether.data.local.entity.SpendingCategories.OTHER,
             initialIsRecurring = false,
             onDismiss = { showManualEntry = false },
-            suggestCategory = manualTxnViewModel::suggestCategory,
+            suggestTransactionDetails = manualTxnViewModel::suggestTransactionDetails,
             onSave = { amount, merchant, isDebit, category, isRecurring ->
                 manualTxnViewModel.addManualTransaction(amount, merchant, isDebit, category, isRecurring)
                 showManualEntry = false
@@ -357,7 +359,9 @@ fun DashboardScreen(
                     onOpenProfile = { showProfile = true },
                     userName = userName,
                     userAvatarId = userAvatarId,
-                    insightsState = insightsState
+                    insightsState = insightsState,
+                    onNavigateToInsights = { selectedDestination = TetherNav.Insights },
+                    onNavigateToVault = { selectedDestination = TetherNav.Vault }
                 )
                 is TetherNav.Insights -> InsightsScreen(
                     innerPadding = innerPadding,
@@ -370,7 +374,7 @@ fun DashboardScreen(
                 is TetherNav.Settings -> SettingsScreen(innerPadding = innerPadding)
                 is TetherNav.Vault    -> VaultScreen(innerPadding = innerPadding)
                 is TetherNav.Tips     -> PlaceholderScreen("Tips", innerPadding)
-                is TetherNav.Sync     -> PlaceholderScreen("Sync", innerPadding)
+                is TetherNav.Growth   -> GrowthPlaceholderScreen(innerPadding = innerPadding)
             }
         }
     }
@@ -389,7 +393,9 @@ fun HomeContent(
     onOpenProfile: () -> Unit,
     userName: String = "there",
     userAvatarId: String = "chill_cat",
-    insightsState: com.anantva.tether.ui_elements.screens.InsightsUiState? = null
+    insightsState: com.anantva.tether.ui_elements.screens.InsightsUiState? = null,
+    onNavigateToInsights: () -> Unit = {},
+    onNavigateToVault: () -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier
@@ -408,20 +414,15 @@ fun HomeContent(
 
         item { Spacer(Modifier.height(16.dp)) }
 
-        item { BalloonSection(uiState = uiState) }
+        item { BalloonSection(uiState = uiState, insightsState = insightsState) }
 
         item { Spacer(Modifier.height(20.dp)) }
 
-        item { CoreStatsRow(uiState = uiState) }
+        item { CoreStatsRow(uiState = uiState, onNavigateToInsights = onNavigateToInsights, onNavigateToVault = onNavigateToVault) }
 
         item { Spacer(Modifier.height(18.dp)) }
 
-        item { SmartInsightCard(
-            uiState = uiState,
-            insightsState = insightsState
-        ) }
-
-        item { Spacer(Modifier.height(24.dp)) }
+        item { GoalProgressCard(uiState = uiState) }
 
         item { PendingSection(pendingTransactions = pendingTransactions, onSeeAll = onSeeAllPending) }
 
@@ -539,7 +540,11 @@ private fun DashboardTopBar(
 }
 
 @Composable
-private fun CoreStatsRow(uiState: DashboardUiState) {
+private fun CoreStatsRow(
+    uiState: DashboardUiState,
+    onNavigateToInsights: () -> Unit = {},
+    onNavigateToVault: () -> Unit = {}
+) {
     val safeToSpend = uiState.dailyLimitRemaining.coerceAtLeast(0)
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -549,6 +554,7 @@ private fun CoreStatsRow(uiState: DashboardUiState) {
             modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(16.dp))
+                .clickable(onClick = onNavigateToInsights)
                 .background(CardBg)
                 .padding(horizontal = 16.dp, vertical = 20.dp),
             contentAlignment = Alignment.Center
@@ -569,6 +575,7 @@ private fun CoreStatsRow(uiState: DashboardUiState) {
             modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(16.dp))
+                .clickable(onClick = onNavigateToVault)
                 .background(CardBg)
                 .padding(horizontal = 16.dp, vertical = 20.dp),
             contentAlignment = Alignment.Center
@@ -583,55 +590,7 @@ private fun CoreStatsRow(uiState: DashboardUiState) {
 }
 
 @Composable
-private fun SmartInsightCard(
-    uiState: DashboardUiState,
-    insightsState: com.anantva.tether.ui_elements.screens.InsightsUiState? = null
-) {
-    val insight = insightsState?.dailyInsightMessage?.takeIf { it.isNotBlank() }
-        ?: smartInsightMessage(uiState)
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(TetherRed.copy(alpha = 0.12f), CardBg)
-                )
-            )
-            .padding(horizontal = 18.dp, vertical = 16.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(text = "💡", fontSize = 22.sp)
-            Spacer(Modifier.size(12.dp))
-            Column {
-                Text(text = "Insight", fontSize = 11.sp, color = TetherRed, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-                Spacer(Modifier.height(2.dp))
-                Text(text = insight, fontSize = 14.sp, color = Color.White, lineHeight = 20.sp)
-            }
-        }
-    }
-}
-
-private fun smartInsightMessage(uiState: DashboardUiState): String {
-    val hour = LocalTime.now().hour
-    val streak = uiState.streakDays
-    return when {
-        uiState.dailySpent == 0 && streak >= 7 -> "Quiet day. Your streak appreciates it."
-        uiState.dailySpent == 0 -> "No unnecessary hits today. Nice."
-        uiState.isOverLimit && streak > 7 -> "A messy day, not a broken run."
-        uiState.isOverLimit -> "Today ran hot. Tomorrow can be cleaner."
-        streak >= 30 -> "Month-long discipline looks good on you."
-        streak >= 14 -> "Two weeks in. The random taps are losing."
-        streak >= 7 -> "The streak is doing its job."
-        hour in 0..4 -> "Late-night restraint still counts."
-        hour in 5..11 -> "Morning check-in. Clean start."
-        hour in 12..17 -> "Spending pace looks steady so far."
-        else -> "Under control today. Keep it boring."
-    }
-}
-
-@Composable
-fun BalloonSection(uiState: DashboardUiState) {
+fun BalloonSection(uiState: DashboardUiState, insightsState: InsightsUiState? = null) {
     var balloonState by remember {
         mutableStateOf(if (uiState.streakDays == 0) BalloonState.POPPED else BalloonState.NORMAL)
     }
@@ -699,9 +658,17 @@ fun BalloonSection(uiState: DashboardUiState) {
 
     val streakPct     = (uiState.streakDays.toFloat() / STREAK_CAP).coerceIn(0f, 1f)
     val balloonSizeDp = 100f + tierAt(uiState.streakDays).ordinal * 10f
-    val countFontSize = (22f + 8f * streakPct).sp
+    val countFontSize = (44f + 16f * streakPct).sp
     val labelFontSize = (8f + 2f * streakPct).sp
-    val feedbackMessage = dashboardFeedbackMessage(uiState)
+    val feedbackMessage = insightsState?.dailyInsightMessage?.takeIf { it.isNotBlank() } ?: run {
+        when {
+            uiState.dailySpent == 0 && uiState.streakDays > 0 -> "Quiet day. Your streak appreciates it."
+            uiState.dailySpent == 0 -> "No unnecessary hits today. Nice."
+            uiState.isOverLimit && uiState.streakDays > 7 -> "A messy day, not a broken run."
+            uiState.isOverLimit -> "Today ran hot. Tomorrow can be cleaner."
+            else -> "Still behaving."
+        }
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "float")
     val floatOffset by infiniteTransition.animateFloat(
@@ -958,19 +925,43 @@ fun StreakBall(
         // Content
         Column(
             modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Text(
                 text = streak.toString(),
                 fontSize = countFontSize,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+                fontWeight = FontWeight.Black,
+                color = Color.White,
+                style = androidx.compose.ui.text.TextStyle(
+                    fontFamily = com.anantva.tether.ui.theme.Figtree,
+                    lineHeight = countFontSize,
+                    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                        alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                        trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                    )
+                )
             )
+            
+            Spacer(modifier = Modifier.height(2.dp))
+            
             Text(
                 text = "Day Streak",
                 fontSize = labelFontSize,
-                color = Color.White.copy(alpha = 0.9f)
+                color = Color.White.copy(alpha = 0.8f),
+                style = androidx.compose.ui.text.TextStyle(
+                    fontFamily = com.anantva.tether.ui.theme.Figtree,
+                    lineHeight = labelFontSize,
+                    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                        alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                        trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                    )
+                )
             )
+            
+            Spacer(modifier = Modifier.height(3.dp))
             
             Crossfade(
                 targetState = displayedTierName,
@@ -981,7 +972,15 @@ fun StreakBall(
                     text = renderedTier,
                     fontSize = (labelFontSize.value * 0.7f + 3f).sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = Color.White.copy(alpha = 0.55f),
+                    style = androidx.compose.ui.text.TextStyle(
+                        fontFamily = com.anantva.tether.ui.theme.Figtree,
+                        platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                        lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                            alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                            trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                        )
+                    )
                 )
             }
         }
@@ -1185,17 +1184,92 @@ private fun MiniPendingRow(transaction: TransactionEntity, onClick: () -> Unit) 
     }
 }
 
-private fun dashboardFeedbackMessage(uiState: DashboardUiState): String {
-    val hour = LocalTime.now().hour
-    val overBy = uiState.dailySpent - uiState.dailyLimit
-    return when {
-        uiState.isOverLimit && hour in 0..4 -> "Midnight damage, huh?"
-        uiState.isOverLimit && overBy > uiState.dailyLimit * 0.5 -> "That escalated quickly."
-        uiState.isOverLimit && hour in 19..23 -> "Dinner did numbers."
-        uiState.isOverLimit -> "Bro... again?"
-        hour in 0..4 -> "Late-night discipline arc."
-        hour in 5..11 -> "Clean start. Rare."
-        hour in 12..17 -> "Still behaving. Suspicious."
-        else -> "Aaj control ho gaya."
+@Composable
+fun GrowthPlaceholderScreen(innerPadding: PaddingValues) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF2A2A2A),
+                            Color(0xFF141414)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                .padding(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(TetherRed.copy(alpha = 0.15f))
+                        .border(1.dp, TetherRed.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "PRO",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        color = TetherRed,
+                        letterSpacing = 1.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Filled.TrendingUp,
+                    contentDescription = "Growth",
+                    modifier = Modifier.size(48.dp),
+                    tint = Color.White
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Growth",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Coming Soon",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TetherRed
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Advanced financial intelligence is coming.",
+                    fontSize = 14.sp,
+                    color = GrimeGrey,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+            }
+        }
     }
 }

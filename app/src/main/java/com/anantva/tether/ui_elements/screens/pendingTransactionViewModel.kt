@@ -41,8 +41,8 @@ class PendingTransactionViewModel @Inject constructor(
     private val _toastEvent = Channel<TransactionToastEvent>(Channel.BUFFERED)
     val toastEvent = _toastEvent.receiveAsFlow()
 
-    suspend fun suggestCategory(merchant: String, isDebit: Boolean): String =
-        tetherRepository.suggestCategory(merchant, if (isDebit) "Expense" else "Credit")
+    suspend fun suggestTransactionDetails(merchant: String, isDebit: Boolean): Pair<String, Boolean> =
+        tetherRepository.suggestTransactionDetails(merchant, if (isDebit) "Expense" else "Credit")
 
     private var countdownJob: Job? = null
     private var visiblePendingId: Long? = null

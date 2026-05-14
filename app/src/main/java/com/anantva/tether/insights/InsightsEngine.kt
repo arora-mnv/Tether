@@ -33,7 +33,7 @@ class InsightsEngine @Inject constructor(
         val insightMessage: String
     )
 
-    suspend fun getDailyInsight(date: LocalDate = LocalDate.now()): DailyInsight {
+    suspend fun getDailyInsight(date: LocalDate = LocalDate.now(), isOverLimit: Boolean = false): DailyInsight {
         val startOfDay = date.atStartOfDay(zone).toInstant().toEpochMilli()
         val endOfDay = startOfDay + 86_400_000 - 1
 
@@ -83,7 +83,8 @@ class InsightsEngine @Inject constructor(
             recurringTxnCount = recurringTxnCount,
             wantSpend = wantSpend,
             previousWeekAverage = previousWeekAverage,
-            dayTransactions = dayTransactions
+            dayTransactions = dayTransactions,
+            isOverLimit = isOverLimit
         )
 
         return DailyInsight(
@@ -220,27 +221,32 @@ class InsightsEngine @Inject constructor(
         recurringTxnCount: Int,
         wantSpend: Int,
         previousWeekAverage: Int,
-        dayTransactions: List<TransactionEntity>
+        dayTransactions: List<TransactionEntity>,
+        isOverLimit: Boolean
     ): String {
         return when {
-            totalSpend == 0 && previousWeekAverage > 0 -> "Quiet day. Your streak appreciates it."
-            totalSpend == 0 -> "No unnecessary hits today. Nice."
+            isOverLimit && discretionarySpend > 0 -> listOf(
+                "Bro... again?", 
+                "Impulse won today.", 
+                "That late-night swipe counted.", 
+                "Tomorrow is the comeback.",
+                "Tiny spends stack fast.",
+                "That swipe was unnecessary."
+            ).random()
+            isOverLimit -> "Wallet took a hit, but at least it was for needs."
+            totalSpend == 0 -> listOf("Wallet survived another day.", "Disciplined.", "Zero damage today.", "No unnecessary hits today. Nice.").random()
             dayTransactions.isNotEmpty() && dayTransactions.all { txn ->
-                SpendingCategories.streakPenaltyWeight(txn.category, txn.merchant, txn.txnCategory) <= 0.25
-            } && recurringTxnCount > 0 -> "Subscriptions carried the day. Nothing impulsive."
-            dayTransactions.isNotEmpty() && dayTransactions.all { txn ->
-                SpendingCategories.streakPenaltyWeight(txn.category, txn.merchant, txn.txnCategory) <= 0.25
+                SpendingCategories.streakPenaltyWeight(txn.category, txn.merchant, txn.txnCategory) == 0.0
             } -> "Only the fixed stuff showed up today."
-            previousWeekAverage > 0 && totalSpend < (previousWeekAverage * 0.6f) -> "You're spending slower than usual this week."
-            wantSpend == 0 && discretionarySpend == 0 -> "All needs today. No random damage."
-            topCategory == SpendingCategories.FOOD && topCategoryAmount < 500 -> "Your food spending cooled off today."
-            topCategory == SpendingCategories.FOOD -> "Food took the lead today. Could've been worse."
+            previousWeekAverage > 0 && totalSpend < (previousWeekAverage * 0.6f) -> "Momentum building."
+            wantSpend == 0 && discretionarySpend == 0 -> "You're spending with intention."
+            topCategory == SpendingCategories.FOOD && discretionarySpend > 0 -> "Food delivery got you again."
             topCategory == SpendingCategories.SHOPPING -> "Shopping got the loudest vote today."
             topCategory == SpendingCategories.ENTERTAINMENT -> "Entertainment tried to steal the scene today."
             normalTxnCount >= 5 -> "$normalTxnCount taps today. A quieter card tomorrow helps."
             healthScore >= 0.8f || needWantRatio >= 3f -> "Clean day. You spent with intent."
             discretionarySpend > totalSpend * 0.6f -> "Most of today’s damage was optional."
-            else -> "Steady day. Nothing chaotic."
+            else -> listOf("Quiet day.", "No major movement yet.", "Steady day.").random()
         }
     }
 

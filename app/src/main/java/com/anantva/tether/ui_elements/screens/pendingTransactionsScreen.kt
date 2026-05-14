@@ -85,7 +85,7 @@ fun PendingTransactionsScreen(
             initialCategory = editing!!.category,
             initialIsRecurring = editing!!.typedCategory == com.anantva.tether.data.local.entity.TxnCategory.RECURRING,
             onDismiss = { editing = null },
-            suggestCategory = viewModel::suggestCategory,
+            suggestTransactionDetails = viewModel::suggestTransactionDetails,
             onSave = { amount, merchant, isDebit, category, isRecurring ->
                 viewModel.confirmPendingTransaction(editing!!.transactionId, amount, merchant, isDebit, category, isRecurring)
                 editing = null

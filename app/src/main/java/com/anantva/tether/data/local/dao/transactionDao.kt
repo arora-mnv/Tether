@@ -23,6 +23,9 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE transactionId = :id LIMIT 1")
     suspend fun getTransactionById(id: Long): TransactionEntity?
 
+    @Query("SELECT * FROM transactions WHERE merchant LIKE '%' || :merchant || '%' ORDER BY date DESC LIMIT 1")
+    suspend fun getLatestTransactionByMerchant(merchant: String): TransactionEntity?
+
     @Query("SELECT * FROM transactions WHERE status = 'PENDING' ORDER BY date DESC")
     fun observePendingTransactions(): Flow<List<TransactionEntity>>
 

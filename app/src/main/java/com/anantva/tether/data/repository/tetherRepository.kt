@@ -575,6 +575,15 @@ class TetherRepository(
     suspend fun suggestCategory(merchant: String, type: String): String =
         categoryEngine.categorize(merchant, type)
 
+    suspend fun suggestTransactionDetails(merchant: String, type: String): Pair<String, Boolean> {
+        val latest = transactionDao.getLatestTransactionByMerchant(merchant)
+        if (latest != null) {
+            val isRecurring = latest.txnCategory == com.anantva.tether.data.local.entity.TxnCategory.RECURRING.toDbValue()
+            return Pair(latest.category, isRecurring)
+        }
+        return Pair(categoryEngine.categorize(merchant, type), false)
+    }
+
     suspend fun updateTransaction(transaction: TransactionEntity): Boolean {
         return try {
             val enrichedTransaction = enrichTransaction(transaction)

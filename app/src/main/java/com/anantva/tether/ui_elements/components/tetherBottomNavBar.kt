@@ -28,12 +28,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Badge
@@ -66,7 +66,7 @@ sealed class NavDestination(val route: String) {
     object Settings : NavDestination("settings")
     object Vault    : NavDestination("vault")
     object Tips     : NavDestination("tips")
-    object Sync     : NavDestination("sync")
+    object Growth   : NavDestination("growth")
 }
 
 private data class NavItem(
@@ -81,7 +81,7 @@ private val navItems = listOf(
     NavItem(NavDestination.Settings, "Settings", Icons.Outlined.Settings,            Icons.Filled.Settings),
     NavItem(NavDestination.Insights, "Insights", Icons.Outlined.Lightbulb,            Icons.Filled.Lightbulb),
     NavItem(NavDestination.Vault,    "Vault",    Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
-    NavItem(NavDestination.Sync,     "Sync",     Icons.Outlined.Backup,               Icons.Filled.Backup)
+    NavItem(NavDestination.Growth,   "Growth",   Icons.Outlined.TrendingUp,           Icons.Filled.TrendingUp)
 )
 
 private val TetherRed    = Color(0xFFE53935)

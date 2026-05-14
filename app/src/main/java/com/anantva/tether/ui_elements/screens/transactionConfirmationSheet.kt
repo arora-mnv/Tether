@@ -37,7 +37,7 @@ fun TransactionConfirmationSheet(
     onAmountChange:  (Double) -> Unit,
     onMerchantChange:(String) -> Unit,
     onCategoryChange:(String) -> Unit,
-    suggestCategory: suspend (merchant: String, isDebit: Boolean) -> String,
+    suggestTransactionDetails: suspend (merchant: String, isDebit: Boolean) -> Pair<String, Boolean>,
     onToggleRecurring: () -> Unit,
     onToggleType:    () -> Unit,
     onConfirm:       () -> Unit,
@@ -56,13 +56,23 @@ fun TransactionConfirmationSheet(
     LaunchedEffect(merchantText, state.isDebit, hasManualCategoryOverride, state.isVisible) {
         if (!state.isVisible || hasManualCategoryOverride) return@LaunchedEffect
 
-        val suggestedCategory = if (merchantText.isBlank()) {
-            if (state.isDebit) SpendingCategories.OTHER else SpendingCategories.INCOME
+        if (merchantText.isBlank()) {
+            val suggestedCategory = if (state.isDebit) SpendingCategories.OTHER else SpendingCategories.INCOME
+            selectedCategory = suggestedCategory
+            onCategoryChange(suggestedCategory)
+            if (isRecurring) {
+                isRecurring = false
+                onToggleRecurring()
+            }
         } else {
-            suggestCategory(merchantText.trim(), state.isDebit)
+            val (suggestedCategory, suggestedRecurring) = suggestTransactionDetails(merchantText.trim(), state.isDebit)
+            selectedCategory = suggestedCategory
+            onCategoryChange(suggestedCategory)
+            if (isRecurring != suggestedRecurring) {
+                isRecurring = suggestedRecurring
+                onToggleRecurring()
+            }
         }
-        selectedCategory = suggestedCategory
-        onCategoryChange(suggestedCategory)
     }
 
     // Countdown arc animation

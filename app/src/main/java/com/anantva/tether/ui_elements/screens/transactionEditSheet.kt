@@ -43,6 +43,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -78,115 +82,62 @@ fun CategorySelectorField(
     accentColor: Color,
     onCategorySelected: (String) -> Unit
 ) {
-    var showSheet by remember { mutableStateOf(false) }
-    var searchQuery by remember(showSheet) { mutableStateOf("") }
-    val filteredCategories = remember(searchQuery) {
-        val query = searchQuery.trim()
-        if (query.isBlank()) {
-            CATEGORY_LIST
-        } else {
-            CATEGORY_LIST.filter { it.contains(query, ignoreCase = true) }
-        }
-    }
+    var expanded by remember { mutableStateOf(false) }
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(200),
+        label = "chevron_rotation"
+    )
 
-    Box {
-        OutlinedTextField(
-            value = selectedCategory,
-            onValueChange = {},
-            readOnly = true,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Filled.KeyboardArrowDown,
-                    contentDescription = "Open categories",
-                    tint = GrimeGrey
-                )
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = accentColor,
-                unfocusedBorderColor = Color(0xFF2A2A2A),
-                cursorColor = accentColor
-            ),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Box(
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .height(48.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .clickable { showSheet = true }
-        )
-    }
-
-    if (showSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSheet = false },
-            containerColor = CardBg
+                .background(DarkBg)
+                .clickable { expanded = true }
+                .border(1.dp, Color(0xFF2A2A2A), RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 32.dp)
+            Text(
+                text = selectedCategory,
+                fontSize = 14.sp,
+                color = Color.White,
+                fontWeight = FontWeight.Medium
+            )
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowDown,
+                contentDescription = "Expand",
+                tint = GrimeGrey,
+                modifier = Modifier.size(20.dp).rotate(rotation)
+            )
+        }
+
+        androidx.compose.material3.MaterialTheme(
+            colorScheme = androidx.compose.material3.MaterialTheme.colorScheme.copy(surface = CardBg)
+        ) {
+            androidx.compose.material3.DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(CardBg)
             ) {
-                Text(
-                    text = "Choose category",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-
-                Spacer(Modifier.height(14.dp))
-
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    singleLine = true,
-                    placeholder = {
-                        Text("Search categories", color = GrimeGrey)
-                    },
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = accentColor,
-                        unfocusedBorderColor = Color(0xFF2A2A2A),
-                        cursorColor = accentColor
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    filteredCategories.forEach { category ->
-                        val isSelected = selectedCategory == category
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) accentColor.copy(alpha = 0.18f) else DarkBg)
-                                .border(
-                                    width = if (isSelected) 1.dp else 0.dp,
-                                    color = if (isSelected) accentColor else Color.Transparent,
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .clickable {
-                                    onCategorySelected(category)
-                                    showSheet = false
-                                }
-                                .padding(horizontal = 14.dp, vertical = 14.dp)
-                        ) {
+                CATEGORY_LIST.forEach { category ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
                             Text(
                                 text = category,
-                                color = if (isSelected) Color.White else GrimeGrey,
-                                fontSize = 14.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                color = if (selectedCategory == category) accentColor else Color.White,
+                                fontWeight = if (selectedCategory == category) FontWeight.Bold else FontWeight.Normal
                             )
+                        },
+                        onClick = {
+                            onCategorySelected(category)
+                            expanded = false
                         }
-                    }
+                    )
                 }
             }
         }
@@ -203,7 +154,7 @@ fun TransactionEditSheet(
     initialCategory: String = SpendingCategories.OTHER,
     initialIsRecurring: Boolean = false,
     onDismiss: () -> Unit,
-    suggestCategory: suspend (merchant: String, isDebit: Boolean) -> String,
+    suggestTransactionDetails: suspend (merchant: String, isDebit: Boolean) -> Pair<String, Boolean>,
     onSave: (amount: Double, merchant: String, isDebit: Boolean, category: String, isRecurring: Boolean) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
@@ -222,10 +173,13 @@ fun TransactionEditSheet(
     LaunchedEffect(merchantText, isDebit, hasManualCategoryOverride) {
         if (hasManualCategoryOverride) return@LaunchedEffect
 
-        selectedCategory = if (merchantText.isBlank()) {
-            if (isDebit) SpendingCategories.OTHER else SpendingCategories.INCOME
+        if (merchantText.isBlank()) {
+            selectedCategory = if (isDebit) SpendingCategories.OTHER else SpendingCategories.INCOME
+            isRecurring = false
         } else {
-            suggestCategory(merchantText.trim(), isDebit)
+            val (cat, rec) = suggestTransactionDetails(merchantText.trim(), isDebit)
+            selectedCategory = cat
+            isRecurring = rec
         }
     }
 
@@ -246,11 +200,12 @@ fun TransactionEditSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 24.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -260,19 +215,19 @@ fun TransactionEditSheet(
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
-                IconButton(onClick = onDismiss) {
+                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = "Close", tint = GrimeGrey)
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
 
             Row(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(DarkBg)
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.Center
+                    .padding(4.dp)
             ) {
                 listOf(true to "Expense", false to "Credit").forEach { (value, label) ->
                     val selected = isDebit == value
@@ -284,26 +239,27 @@ fun TransactionEditSheet(
 
                     Box(
                         modifier = Modifier
+                            .weight(1f)
                             .clip(RoundedCornerShape(10.dp))
                             .background(bg)
                             .clickable { isDebit = value }
-                            .padding(horizontal = 22.dp, vertical = 10.dp),
+                            .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = label,
                             fontSize = 14.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                             color = if (selected) Color.White else GrimeGrey
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
 
             Text("Amount", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             OutlinedTextField(
                 value = amountText,
                 onValueChange = { amountText = it },
@@ -325,10 +281,10 @@ fun TransactionEditSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
 
             Text("Merchant", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             OutlinedTextField(
                 value = merchantText,
                 onValueChange = { merchantText = it },
@@ -343,78 +299,91 @@ fun TransactionEditSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
 
-            Text("Category", fontSize = 12.sp, color = GrimeGrey, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
-            CategorySelectorField(
-                selectedCategory = selectedCategory,
-                accentColor = accentColor,
-                onCategorySelected = { category ->
-                    hasManualCategoryOverride = true
-                    selectedCategory = category
-                }
-            )
-
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Mark as Recurring", fontSize = 14.sp, color = Color.White)
-                Switch(
-                    checked = isRecurring,
-                    onCheckedChange = { isRecurring = it },
-                    colors = androidx.compose.material3.SwitchDefaults.colors(
-                        checkedThumbColor = accentColor,
-                        checkedTrackColor = accentColor.copy(alpha = 0.5f)
+                Box(modifier = Modifier.weight(0.7f)) {
+                    CategorySelectorField(
+                        selectedCategory = selectedCategory,
+                        accentColor = accentColor,
+                        onCategorySelected = { category ->
+                            hasManualCategoryOverride = true
+                            selectedCategory = category
+                        }
                     )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .weight(0.3f)
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DarkBg)
+                        .border(1.dp, Color(0xFF2A2A2A), RoundedCornerShape(12.dp))
+                        .clickable { isRecurring = !isRecurring }
+                        .padding(horizontal = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Repeat", fontSize = 13.sp, color = GrimeGrey, fontWeight = FontWeight.Medium)
+                    Switch(
+                        checked = isRecurring,
+                        onCheckedChange = { isRecurring = it },
+                        modifier = Modifier.scale(0.6f),
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = accentColor,
+                            uncheckedThumbColor = GrimeGrey,
+                            uncheckedTrackColor = Color(0xFF2A2A2A),
+                            uncheckedBorderColor = Color.Transparent
+                        )
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Button(
+                onClick = {
+                    val parsedAmount = amountValue ?: return@Button
+                    onSave(parsedAmount, merchantText.trim(), isDebit, selectedCategory, isRecurring)
+                },
+                enabled = canSave,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+            ) {
+                Text(
+                    text = "Save",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
             }
 
-            Spacer(Modifier.height(26.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (onDelete != null) {
-                    Button(
-                        onClick = { showDeleteDialog = true },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = TetherRed)
-                    ) {
-                        Text(
-                            text = "Delete",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
-
+            if (onDelete != null) {
+                Spacer(Modifier.height(10.dp))
                 Button(
-                    onClick = {
-                        val parsedAmount = amountValue ?: return@Button
-                        onSave(parsedAmount, merchantText.trim(), isDebit, selectedCategory, isRecurring)
-                    },
-                    enabled = canSave,
+                    onClick = { showDeleteDialog = true },
                     modifier = Modifier
-                        .weight(if (onDelete != null) 1f else 1f)
-                        .height(52.dp),
+                        .fillMaxWidth()
+                        .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = CreditGreen)
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkBg)
                 ) {
                     Text(
-                        text = "Save",
+                        text = "Delete",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TetherRed
                     )
                 }
             }

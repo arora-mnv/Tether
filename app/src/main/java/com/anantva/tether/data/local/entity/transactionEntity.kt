@@ -106,12 +106,10 @@ object SpendingCategories {
         val typedCategory = TxnCategory.fromDbValue(txnCategory)
         return when {
             typedCategory == TxnCategory.INCOME || typedCategory == TxnCategory.INVESTMENT -> 0.0
+            typedCategory == TxnCategory.RECURRING -> 0.0
             category in setOf(RENT, EMI, BILLS) -> 0.0
-            normalizedMerchant.containsAny("insurance", "lic", "policy", "premium") -> 0.0
-            category == SUBSCRIPTION && (typedCategory == TxnCategory.RECURRING || normalizedMerchant.containsAny(
-                "jio", "airtel", "broadband", "wifi", "postpaid"
-            )) -> 0.15
-            typedCategory == TxnCategory.RECURRING -> 0.25
+            normalizedMerchant.containsAny("insurance", "lic", "policy", "premium", "electricity", "water", "wifi", "broadband", "loan") -> 0.0
+            category == SUBSCRIPTION -> 0.45
             category in setOf(HEALTH, EDUCATION) -> 0.25
             category == TRANSPORT -> 0.45
             category == FOOD && spendNatureFor(category, merchant, txnCategory) == SpendNature.NEED -> 0.35
