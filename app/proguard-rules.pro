@@ -1,21 +1,63 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ── App Data Layer ─────────────────────────────────────
+# Room entities, DAOs, Firestore serialization models,
+# repository classes, and data transfer objects.
+# These use reflection for DB mapping and cloud sync.
+-keep class com.anantva.tether.data.** { *; }
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# ── Insights & Domain Models ───────────────────────────
+# Engine return types, use-case results, and sealed
+# result classes referenced across ViewModel boundaries.
+-keep class com.anantva.tether.insights.** { *; }
+-keep class com.anantva.tether.calculator.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ── Room ────────────────────────────────────────────────
+# Room uses annotation processing + reflection for
+# SQL generation. Entities/DAOs/Database must survive.
+-keep @androidx.room.Entity class *
+-keep @androidx.room.Dao class *
+-keep @androidx.room.Database class *
+-keepclassmembers class * {
+    @androidx.room.* <methods>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ── Hilt / Dagger ──────────────────────────────────────
+# Generated components, factories, and modules.
+-keep class dagger.hilt.** { *; }
+-keep class * extends dagger.hilt.android.internal.managers.ViewComponentManager$FragmentContextWrapper { *; }
+-keep class * extends dagger.hilt.android.internal.managers.ActivityRetainedComponentManager$ActivityRetainedComponentBuilderEntryPoint { *; }
+
+# ── Firebase / Firestore ────────────────────────────────
+# Firebase Auth and Firestore use runtime class resolution.
+-keep class com.google.firebase.** { *; }
+-keepclassmembers class * {
+    @com.google.firebase.firestore.Exclude <methods>;
+    @com.google.firebase.firestore.IgnoreExtraProperties <methods>;
+    @com.google.firebase.firestore.ServerTimestamp <methods>;
+}
+
+# ── Google Sign-In ──────────────────────────────────────
+-keep class com.google.android.gms.auth.** { *; }
+
+# ── Kotlin ──────────────────────────────────────────────
+# Coroutine continuations, sealed class hierarchies,
+# and metadata used by reflection-based frameworks.
+-keepattributes *Annotation*, InnerClasses, EnclosingMethod, Signature, Exceptions
+-keep class kotlin.Metadata { *; }
+
+# Kotlin Coroutines
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keepclassmembers class kotlinx.coroutines.** {
+    volatile <fields>;
+}
+-dontwarn kotlinx.coroutines.internal.**
+
+# ── Jetpack Compose ────────────────────────────────────
+# Stability annotations used by Compose compiler.
+-keep @androidx.compose.runtime.Stable class *
+-keep @androidx.compose.runtime.Immutable class *
+
+# ── Debug Symbols ──────────────────────────────────────
+# Preserve line numbers for crash reporting.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

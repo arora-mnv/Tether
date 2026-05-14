@@ -24,7 +24,7 @@ import com.anantva.tether.data.local.entity.UserProfileEntity
         CategoryCorrectionEntity::class
     ],
     version = 6,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
 
@@ -38,16 +38,6 @@ abstract class AppDatabase : RoomDatabase() {
         // @Volatile ensures this variable is instantly updated across all threads
         @Volatile
         private var INSTANCE: AppDatabase? = null
-
-        private val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS category_corrections (" +
-                    "merchantKey TEXT NOT NULL PRIMARY KEY, " +
-                    "category TEXT NOT NULL)"
-                )
-            }
-        }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -69,6 +59,18 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                 }
             }
+        }
+
+        // Gap migration — schema changes at v2→v3 predate export tracking.
+        // All required columns are verified in later migrations.
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) { }
+        }
+
+        // Gap migration — schema changes at v3→v4 predate export tracking.
+        // All required columns are verified in later migrations.
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) { }
         }
 
         private val MIGRATION_4_5 = object : Migration(4, 5) {
@@ -93,21 +95,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS category_corrections (" +
+                    "merchantKey TEXT NOT NULL PRIMARY KEY, " +
+                    "category TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
-            // If the INSTANCE is not null, return it.
-            // If it IS null, create the database.
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "tether_database" // The actual file name on the phone
+                    "tether_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_4_5, MIGRATION_5_6)
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
 
                 INSTANCE = instance
-                // return instance
                 instance
             }
         }

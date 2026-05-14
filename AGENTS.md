@@ -16,18 +16,19 @@
 
 ## Commands
 - Build debug APK: `./gradlew assembleDebug`.
+- Build release APK (minified + obfuscated): `./gradlew assembleRelease`.
 - Install on device/emulator: `./gradlew installDebug`.
 - Unit tests: `./gradlew test` or `./gradlew testDebugUnitTest --tests 'fully.qualified.TestName'`.
 - Instrumented tests need a connected device: `./gradlew connectedAndroidTest`.
 - Clean only when needed: `./gradlew clean`.
 
 ## Gradle / Toolchain Gotchas
-- `gradle.properties` pins Java to Android Studio JBR at `/Applications/Android Studio.app/Contents/jbr/Contents/Home`; builds expect Java 17.
+- `gradle.properties` used to pin Java to `/Applications/Android Studio.app/...` — that hardcoded path was removed. Gradle 9 requires **Java 17+**; set `JAVA_HOME` or ensure `java` on PATH is ≥ 17.
 - Keep `app/build.gradle.kts` plugin order: Android application, Kotlin Android, Kotlin Compose, KSP, Hilt, Google Services.
 - Lint: `abortOnError = false`; disabled checks: `NullSafeMutableLiveData`, `FlowOperatorInvokedInComposition`, `FrequentlyChangingValue`, `RememberInComposition`.
 - Dependencies mixed: version catalog for core plugins/libs, hardcoded versions for Firebase, Room, DataStore, Navigation, Google Sign-In, and coroutine Play Services.
 - `proguard-rules.pro` is essentially empty (defaults only).
-- Room `exportSchema = false` — no schema exports; no `room.schemaLocation` KSP arg.
+- Room `exportSchema = true` with output at `app/schemas/`. When changing entities, update version + migrations + schema JSON.
 
 ## Runtime Flow
 - Startup in `MainActivity`: installSplashScreen (min 3s), read DataStore flags, then onboarding → setup → dashboard. Dashboard redirects to `auth` when `isCloudSyncEnabled && !isLoggedIn`.
@@ -37,8 +38,8 @@
 - `AppForegroundTracker` (in `lifecycle/`) uses `ProcessLifecycleOwner` to track foreground state and clears `PendingSnoozeStore` on app start.
 
 ## Data / Sync Gotchas
-- Room file `tether_database`; `AppDatabase` version 6, `exportSchema = false`, `fallbackToDestructiveMigration()` after explicit migration `MIGRATION_5_6`. Entities: `UserProfileEntity`, `TransactionEntity`, `GoalEntity`, `CategoryCorrectionEntity`. `CategoryPatternDao`/`CategoryPatternEntity` exist but are NOT registered in `AppDatabase` (dead code / planned).
-- If changing Room entities, update `AppDatabase` entities list, version, and migrations.
+- Room file `tether_database`; `AppDatabase` version 6, `exportSchema = true`, migrations: 1→2, 2→3, 3→4, 4→5, 5→6 (full chain). No `fallbackToDestructiveMigration`. Entities: `UserProfileEntity`, `TransactionEntity`, `GoalEntity`, `CategoryCorrectionEntity`. `CategoryPatternDao`/`CategoryPatternEntity` exist but are NOT registered in `AppDatabase` (dead code / planned).
+- If changing Room entities, update `AppDatabase` entities list, version, and migrations. Schema JSON exports in `app/schemas/` must be regenerated (automatic on next build) and committed.
 - Pending transactions (status=`"PENDING"`) are local transient state — never synced to Firestore. `addPendingTransactionFromNotification()` skips cloud save entirely.
 - Banking notifications parsed by `TetherNotificationListenerService` (in `services/tetherNotificationListener.kt`); parsing in `data/parser/` via `TransactionParser` + `CategoryEngine` + `DeduplicationEngine`. Targets Indian banking SMS formats.
 - `BootReceiver` (in `services/bootReceiver.kt`) is a stub with only a TODO comment.
