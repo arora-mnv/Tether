@@ -87,22 +87,47 @@ fun SettingsScreen(
     if (resetDialog) {
         AlertDialog(
             onDismissRequest = { resetDialog = false },
-            title = { Text("Reset all data") },
-            text = { Text("This will delete all transactions and restart setup.") },
-            confirmButton = {
-                Button(onClick = {
-                    resetDialog = false
-                    viewModel.resetAllData {
-                        val intent = Intent(context, com.anantva.tether.MainActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                        }
-                        context.startActivity(intent)
-                        (context as? Activity)?.finish()
+            containerColor = Color(0xFF1A1A1A),
+            titleContentColor = Color.White,
+            textContentColor = Color.White.copy(alpha = 0.7f),
+            title = {
+                Text("Remove all your data?", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column {
+                    Text("This permanently deletes your financial history, insights, streaks, and synced cloud data.")
+                    if (uiState.isCloudStorage) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Your synced cloud data will also be permanently removed.",
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
-                }) { Text("Reset") }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        resetDialog = false
+                        viewModel.deleteAllData {
+                            val intent = Intent(context, com.anantva.tether.MainActivity::class.java).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                            }
+                            context.startActivity(intent)
+                            (context as? Activity)?.finish()
+                        }
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF3A3A3A)
+                    )
+                ) {
+                    Text("Remove Data", color = Color.White, fontWeight = FontWeight.Bold)
+                }
             },
             dismissButton = {
-                TextButton(onClick = { resetDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { resetDialog = false }) {
+                    Text("Cancel", color = GrimeGrey)
+                }
             }
         )
     }
@@ -205,9 +230,12 @@ fun SettingsScreen(
         Button(
             onClick = { resetDialog = true },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
+            shape = RoundedCornerShape(14.dp),
+            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF2A2A2A)
+            )
         ) {
-            Text("Reset data", fontWeight = FontWeight.Bold)
+            Text("Remove My Data", fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.7f))
         }
 
         TextButton(

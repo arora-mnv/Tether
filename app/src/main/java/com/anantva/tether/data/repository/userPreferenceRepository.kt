@@ -69,7 +69,7 @@ class UserPreferencesRepository @Inject constructor(
         dataStore.data.map { it[PreferencesKeys.USER_PHONE] ?: "" }
 
     val selectedAvatar: Flow<String> =
-        dataStore.data.map { it[PreferencesKeys.SELECTED_AVATAR] ?: "chill_cat" }
+        dataStore.data.map { it[PreferencesKeys.SELECTED_AVATAR] ?: com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId }
 
     val streakDays: Flow<Int> =
         dataStore.data.map { it[PreferencesKeys.STREAK_DAYS] ?: 0 }

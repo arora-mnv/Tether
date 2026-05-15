@@ -95,4 +95,8 @@ class MerchantLearningEngine @Inject constructor(
         .replace(Regex("[^a-z0-9 ]"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
+
+    suspend fun reset() {
+        patternDao.deleteAll()
+    }
 }

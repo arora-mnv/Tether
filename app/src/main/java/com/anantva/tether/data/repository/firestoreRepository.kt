@@ -413,6 +413,31 @@ class FirestoreRepository @Inject constructor() {
         return getUserProfile(userId) != null
     }
 
+    suspend fun deleteAllUserData(userId: String) {
+        try {
+            val userDoc = firestore.collection("users").document(userId)
+            val txns = userTransactionsRef(userId).get().await()
+            val batch1 = firestore.batch()
+            txns.documents.forEach { batch1.delete(it.reference) }
+            batch1.commit().await()
+
+            val goals = userGoalsRef(userId).get().await()
+            val batch2 = firestore.batch()
+            goals.documents.forEach { batch2.delete(it.reference) }
+            batch2.commit().await()
+
+            val corrections = userDoc.collection("categoryCorrections").get().await()
+            val batch3 = firestore.batch()
+            corrections.documents.forEach { batch3.delete(it.reference) }
+            batch3.commit().await()
+
+            userDoc.delete().await()
+            Log.d(TAG, "deleteAllUserData: success for userId=$userId")
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteAllUserData: error for userId=$userId", e)
+        }
+    }
+
     suspend fun testFirestoreWrite(): Boolean {
         return try {
             val data = mapOf(

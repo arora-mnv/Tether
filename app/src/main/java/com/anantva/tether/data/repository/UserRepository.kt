@@ -3,6 +3,7 @@ package com.anantva.tether.data.repository
 import android.util.Log
 import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.model.TetherOrbDefaults
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,7 +22,7 @@ data class UserData(
     val name: String? = null,
     val phone: String? = null,
     val email: String? = null,
-    val avatarId: String = "chill_cat"
+    val avatarId: String = com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId
 ) {
     val displayName: String
         get() = name?.takeIf { it.isNotBlank() } ?: "there"
@@ -47,21 +48,26 @@ class UserRepository @Inject constructor(
     fun loadCurrentUser() {
         scope.launch {
             val uid = authManager.getCurrentUserId()
-            if (uid == null) {
-                Log.w(TAG, "loadCurrentUser: no authenticated user")
-                _user.value = UserData()
-                return@launch
-            }
-
             val localName = preferencesRepository.userName.first()
             val localEmail = preferencesRepository.userEmail.first()
             val localPhone = preferencesRepository.userPhone.first()
             val localAvatar = preferencesRepository.selectedAvatar.first()
 
+            if (uid == null) {
+                Log.d(TAG, "loadCurrentUser: local-only mode, using DataStore identity")
+                _user.value = UserData(
+                    name = localName.takeIf { it.isNotBlank() },
+                    phone = localPhone.takeIf { it.isNotBlank() },
+                    email = localEmail.takeIf { it.isNotBlank() },
+                    avatarId = localAvatar.takeIf { it.isNotBlank() } ?: TetherOrbDefaults.DefaultAvatarId
+                )
+                return@launch
+            }
+
             var name: String? = null
             var phone: String? = null
             var email: String? = null
-            var avatarId: String = localAvatar.takeIf { it.isNotBlank() } ?: "chill_cat"
+            var avatarId: String = localAvatar.takeIf { it.isNotBlank() } ?: TetherOrbDefaults.DefaultAvatarId
 
             // Try Firestore first
             try {
@@ -75,7 +81,6 @@ class UserRepository @Inject constructor(
                 Log.e(TAG, "loadCurrentUser: Firestore fetch failed for uid=$uid: ${e.message}", e)
             }
 
-            // Fall back to local DataStore for anything not in Firestore
             if (name.isNullOrBlank()) {
                 name = localName.takeIf { it.isNotBlank() }
             }
@@ -86,7 +91,6 @@ class UserRepository @Inject constructor(
                 email = localEmail.takeIf { it.isNotBlank() }
             }
 
-            // Also grab from FirebaseAuth as final fallback
             if (name.isNullOrBlank()) {
                 name = authManager.getCurrentUserName()
             }
@@ -104,7 +108,7 @@ class UserRepository @Inject constructor(
                 email = email,
                 avatarId = avatarId
             )
-            Log.d(TAG, "loadCurrentUser: final state uid=$uid name=$name email=$email phone=$phone")
+            Log.d(TAG, "loadCurrentUser: final state uid=$uid name=$name")
         }
     }
 

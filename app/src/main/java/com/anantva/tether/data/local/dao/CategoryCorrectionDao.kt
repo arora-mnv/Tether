@@ -16,4 +16,7 @@ interface CategoryCorrectionDao {
 
     @Query("SELECT * FROM category_corrections")
     suspend fun getAllCorrections(): List<CategoryCorrectionEntity>
+
+    @Query("DELETE FROM category_corrections")
+    suspend fun deleteAll()
 }

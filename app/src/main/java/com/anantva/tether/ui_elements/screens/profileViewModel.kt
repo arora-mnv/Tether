@@ -8,6 +8,7 @@ import com.anantva.tether.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -18,7 +19,7 @@ data class ProfileUiState(
     val email: String = "",
     val phone: String = "",
     val isCloudStorage: Boolean = false,
-    val avatarId: String = "chill_cat",
+    val avatarId: String = com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId,
     val streakDays: Int = 0,
     val personality: String = "Forming",
     val googlePhotoUrl: String? = null
@@ -32,7 +33,11 @@ class ProfileViewModel @Inject constructor(
 ) : ViewModel() {
 
     init {
-        userRepository.loadCurrentUser()
+        viewModelScope.launch {
+            if (preferencesRepository.isCloudStorage.first()) {
+                userRepository.loadCurrentUser()
+            }
+        }
     }
 
     val uiState: StateFlow<ProfileUiState> =
@@ -48,9 +53,9 @@ class ProfileViewModel @Inject constructor(
                 email = user?.email?.takeIf { it.isNotBlank() } ?: email,
                 phone = user?.phone?.takeIf { it.isNotBlank() } ?: "",
                 isCloudStorage = cloud,
-                avatarId = user?.avatarId?.takeIf { it.isNotBlank() } ?: avatar ?: "chill_cat",
+                avatarId = user?.avatarId?.takeIf { it.isNotBlank() } ?: avatar ?: com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId,
                 streakDays = streak,
-                googlePhotoUrl = authManager.getCurrentUserPhotoUrl()
+                googlePhotoUrl = if (cloud) authManager.getCurrentUserPhotoUrl() else null
             )
         }.stateIn(
             scope = viewModelScope,

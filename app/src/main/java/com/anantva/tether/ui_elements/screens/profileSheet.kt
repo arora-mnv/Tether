@@ -202,8 +202,9 @@ fun ProfileSheet(
                         }
                     }
 
-                    val hasCustomAvatar = selectedAvatarId != "chill_cat" ||
-                        uiState.avatarId != "chill_cat"
+                    val defaultId = com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId
+                    val hasCustomAvatar = selectedAvatarId != defaultId ||
+                        uiState.avatarId != defaultId
                     val googlePhotoUrl = if (!hasCustomAvatar) uiState.googlePhotoUrl else null
                     AnimatedAvatar(
                         avatarId = selectedAvatarId,

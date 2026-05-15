@@ -19,4 +19,7 @@ interface MerchantPatternDao {
 
     @Query("DELETE FROM merchant_patterns WHERE normalizedMerchant = :merchant")
     suspend fun deletePattern(merchant: String)
+
+    @Query("DELETE FROM merchant_patterns")
+    suspend fun deleteAll()
 }

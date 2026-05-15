@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.anantva.tether.data.local.entity.GoalEntity
 import com.anantva.tether.data.local.UserPreferencesRepository
 import com.anantva.tether.data.repository.TetherRepository
+import com.anantva.tether.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +20,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SetupViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
-    private val tetherRepository: TetherRepository
+    private val tetherRepository: TetherRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _currentStep = MutableStateFlow(1)
@@ -62,7 +64,6 @@ class SetupViewModel @Inject constructor(
 
     fun nextStep() {
         when {
-            _currentStep.value == 5 && !_isCloudStorage.value -> _currentStep.value = 7
             _currentStep.value < 7 -> _currentStep.value++
             else -> completeSetup()
         }
@@ -70,7 +71,6 @@ class SetupViewModel @Inject constructor(
 
     fun previousStep() {
         when {
-            _currentStep.value == 7 && !_isCloudStorage.value -> _currentStep.value = 5
             _currentStep.value > 1 -> _currentStep.value--
         }
     }
@@ -85,6 +85,8 @@ class SetupViewModel @Inject constructor(
                 isCloud           = _isCloudStorage.value,
                 userName          = _userName.value
             )
+
+            userRepository.loadCurrentUser()
 
             val goalAmount = _savingsGoal.value.toDoubleOrNull() ?: 0.0
             val commitment = _monthlyCommitment.value

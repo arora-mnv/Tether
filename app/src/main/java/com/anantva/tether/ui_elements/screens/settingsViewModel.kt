@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
 import com.anantva.tether.data.repository.SyncManager
+import com.anantva.tether.data.use_case.DeleteUserDataUseCase
 import com.anantva.tether.data.repository.SyncResult
 import com.anantva.tether.data.repository.TetherRepository
 import com.anantva.tether.data.repository.UserRepository
@@ -32,7 +33,8 @@ class SettingsViewModel @Inject constructor(
     private val tetherRepository: TetherRepository,
     private val syncManager: SyncManager,
     private val authManager: FirebaseAuthManager,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val deleteUserDataUseCase: DeleteUserDataUseCase
 ) : ViewModel() {
 
     private val _syncState = MutableStateFlow<SyncResult?>(null)
@@ -128,10 +130,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun resetAllData(onDone: () -> Unit) {
+    fun deleteAllData(onDone: () -> Unit) {
         viewModelScope.launch {
-            tetherRepository.clearAllData()
-            preferencesRepository.resetAll()
+            deleteUserDataUseCase()
             onDone()
         }
     }

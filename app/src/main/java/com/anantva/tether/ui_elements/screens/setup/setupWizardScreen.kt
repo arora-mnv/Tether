@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,6 +21,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
@@ -32,6 +37,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -42,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -154,6 +161,7 @@ fun SetupWizardScreen(
     var notificationListenerEnabled by remember {
         mutableStateOf(isNotificationListenerEnabled(context))
     }
+    var termsAccepted by remember { mutableStateOf(false) }
 
     val allPermissionsReady = allRuntimeGranted && notificationListenerEnabled
 
@@ -183,14 +191,6 @@ fun SetupWizardScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // ✅ Fix 2: Auto-proceed the moment all permissions are ready
-    // User should never need to tap the button again after granting everything
-    LaunchedEffect(allPermissionsReady, currentStep) {
-        if (currentStep == 7 && allPermissionsReady) {
-            viewModel.nextStep()
-        }
-    }
-
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -199,8 +199,16 @@ fun SetupWizardScreen(
         notificationListenerEnabled = isNotificationListenerEnabled(context)
     }
 
-    val totalSteps = if (isCloud) 7f else 6f
-    val visualStep = if (!isCloud && currentStep == 7) 6f else currentStep.toFloat()
+    val totalSteps = 7f
+    val visualStep = currentStep.toFloat()
+
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(16)
+            phase.floatValue += 0.016f
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -209,16 +217,37 @@ fun SetupWizardScreen(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(60.dp))
-
-        LinearProgressIndicator(
-            progress   = { visualStep / totalSteps },
-            modifier   = Modifier.fillMaxWidth().height(8.dp),
-            color      = TetherRed,
-            trackColor = GrimeGrey,
-        )
-
         Spacer(modifier = Modifier.height(40.dp))
+
+        if (currentStep < 7) {
+            Box(
+                modifier = Modifier.size(56.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(56.dp)) {
+                    drawCircle(
+                        brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFE53935).copy(alpha = 0.15f * (0.5f + 0.5f * kotlin.math.sin(phase.floatValue * 1.2f))),
+                                Color.Transparent
+                            ),
+                            center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f),
+                            radius = 32f
+                        ),
+                        radius = 32f
+                    )
+                }
+                val avatarProgress = (visualStep / totalSteps).coerceIn(0f, 1f)
+                val sizeMul = (0.7f + avatarProgress * 0.3f)
+                OnboardingIdentityOrb(
+                    orbSize = (42 * sizeMul).dp,
+                    progress = avatarProgress
+                )
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        } else {
+            Spacer(modifier = Modifier.height(64.dp))
+        }
 
         AnimatedContent(
             targetState = currentStep,
@@ -233,30 +262,40 @@ fun SetupWizardScreen(
             }, label = "SetupAnimation"
         ) { step ->
             when (step) {
-                1 -> StepInputCard(
-                    title = "Your Name",
-                    subtitle = "What should we call you?",
-                    value = name,
-                    onValueChange = viewModel::updateUserName,
-                    prefix = "",
-                    keyboardType = KeyboardType.Text,
-                    maxLen = 32
+                1 -> StepStorageChoice(
+                    isCloudSelected = isCloud,
+                    onChoiceSelected = viewModel::setStoragePreference,
+                    termsAccepted = termsAccepted,
+                    onTermsChanged = { termsAccepted = it }
                 )
-                2 -> StepInputCard("Current Balance", "How much do you currently have?", balance, viewModel::updateBalance, "₹")
-                3 -> StepInputCard("Savings Goal", "How much do you want to save?", goal, viewModel::updateSavingsGoal, "₹")
-                4 -> StepMonthlyCommitment(
+                2 -> {
+                    if (isCloud) {
+                        StepAuth {
+                            viewModel.setAuthenticated(true)
+                            viewModel.nextStep()
+                        }
+                    } else {
+                        StepInputCard(
+                            title = "Your Name",
+                            subtitle = "What should we call you?",
+                            value = name,
+                            onValueChange = viewModel::updateUserName,
+                            prefix = "",
+                            keyboardType = KeyboardType.Text,
+                            maxLen = 32
+                        )
+                    }
+                }
+                3 -> StepInputCard("Current Balance", "How much do you currently have?", balance, viewModel::updateBalance, "₹")
+                4 -> StepInputCard("Savings Goal", "How much do you want to save?", goal, viewModel::updateSavingsGoal, "₹")
+                5 -> StepMonthlyCommitment(
                     savingsGoal        = goal.toDoubleOrNull() ?: 0.0,
                     monthlyCommitment  = commitment,
                     hasSavedCommitment = hasSavedCommitment,
                     onHasSavedChange   = viewModel::setHasSavedCommitment,
                     onCommitmentChange = viewModel::updateMonthlyCommitment
                 )
-                5 -> StepStorageChoice(isCloud, viewModel::setStoragePreference)
-                6 -> StepAuth {
-                    viewModel.setAuthenticated(true)
-                    viewModel.nextStep()
-                }
-                7 -> StepPermissions(
+                6 -> StepPermissions(
                     runtimePermissions          = runtimePermissions,
                     grantedPermissions          = grantedPermissions,
                     notificationListenerEnabled = notificationListenerEnabled,
@@ -264,6 +303,7 @@ fun SetupWizardScreen(
                         context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     }
                 )
+                7 -> StepActivation(onContinue = { viewModel.nextStep() })
             }
         }
 
@@ -281,43 +321,41 @@ fun SetupWizardScreen(
                 Spacer(modifier = Modifier.width(1.dp))
             }
 
+            val buttonEnabled = if (currentStep == 7) true
+                else isStepValid(currentStep, name, balance, goal, commitment, isAuthenticated, notificationListenerEnabled, termsAccepted)
             Button(
                 onClick = {
-                    if (currentStep == 7) {
-                        when {
-                            // ✅ Everything ready — viewModel.nextStep() will be called
-                            // automatically by LaunchedEffect, but handle tap too
-                            allPermissionsReady -> viewModel.nextStep()
-
-                            // ✅ Runtime permissions still needed
-                            !allRuntimeGranted -> {
-                                val toRequest = runtimePermissions
-                                    .filter { grantedPermissions[it.permission] != true }
-                                    .map { it.permission }
-                                    .toTypedArray()
-                                permissionLauncher.launch(toRequest)
-                            }
-
-                            // ✅ Only notification listener missing
-                            !notificationListenerEnabled -> {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                                )
+                    when (currentStep) {
+                        6 -> {
+                            when {
+                                allPermissionsReady -> viewModel.nextStep()
+                                !allRuntimeGranted -> {
+                                    val toRequest = runtimePermissions
+                                        .filter { grantedPermissions[it.permission] != true }
+                                        .map { it.permission }
+                                        .toTypedArray()
+                                    permissionLauncher.launch(toRequest)
+                                }
+                                !notificationListenerEnabled -> {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                    )
+                                }
                             }
                         }
-                    } else {
-                        viewModel.nextStep()
+                        else -> viewModel.nextStep()
                     }
                 },
                 colors  = ButtonDefaults.buttonColors(containerColor = TetherRed),
                 shape   = RoundedCornerShape(12.dp),
-                enabled = isStepValid(currentStep, name, balance, goal, commitment, isAuthenticated)
+                enabled = buttonEnabled
             ) {
                 Text(
                     when {
-                        currentStep < 7     -> "Next"
-                        allPermissionsReady -> "Finish Setup"
-                        else                -> "Grant & Continue"
+                        currentStep == 7                -> "Enter Tether"
+                        currentStep == 6 && allPermissionsReady -> "Continue"
+                        currentStep == 6                -> "Grant \u0026 Continue"
+                        else                            -> "Next"
                     }
                 )
             }
@@ -432,13 +470,83 @@ fun StepDatePicker(targetDateMillis: Long?, onDateSelected: (Long?) -> Unit) {
 }
 
 @Composable
-fun StepStorageChoice(isCloudSelected: Boolean, onChoiceSelected: (Boolean) -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-        Text(text = "Data Storage", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(40.dp))
-        StorageCard("Local Only", "Data stays on your device.", !isCloudSelected) { onChoiceSelected(false) }
-        Spacer(modifier = Modifier.height(16.dp))
-        StorageCard("Cloud Sync", "Access data anywhere.", isCloudSelected) { onChoiceSelected(true) }
+fun StepStorageChoice(
+    isCloudSelected: Boolean,
+    onChoiceSelected: (Boolean) -> Unit,
+    termsAccepted: Boolean = false,
+    onTermsChanged: ((Boolean) -> Unit)? = null
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+    ) {
+        Text(text = "Put your data in the cloud?", style = MaterialTheme.typography.titleLarge, color = Color.White)
+        Spacer(modifier = Modifier.height(32.dp))
+        StorageCard("Local Only", "Your data stays only on this device.", !isCloudSelected) { onChoiceSelected(false) }
+        Spacer(modifier = Modifier.height(14.dp))
+        StorageCard("Cloud Sync", "Sync your financial identity across devices.", isCloudSelected) { onChoiceSelected(true) }
+
+        Spacer(modifier = Modifier.height(20.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0x12FFFFFF))
+                .padding(16.dp)
+        ) {
+            Column {
+                Text(
+                    text = if (isCloudSelected) "Your encrypted data syncs securely across your devices."
+                          else "All data stays on this device.",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Tether stores your financial activity securely and never sells personal financial data.",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.4f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = termsAccepted,
+                onCheckedChange = { onTermsChanged?.invoke(it) },
+                colors = CheckboxDefaults.colors(checkedColor = TetherRed, uncheckedColor = GrimeGrey)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "I agree to the ",
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.6f)
+            )
+            Text(
+                text = "Terms",
+                fontSize = 13.sp,
+                color = TetherRed,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = " & ",
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.6f)
+            )
+            Text(
+                text = "Privacy Policy",
+                fontSize = 13.sp,
+                color = TetherRed,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(text = ".", fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f))
+        }
     }
 }
 
@@ -917,18 +1025,382 @@ internal fun RuntimePermissionCard(
 }
 
 // ─────────────────────────────────────────────
+// Onboarding Identity Orb
+// ─────────────────────────────────────────────
+
+private val OrbRed = Color(0xFFE53935)
+private val OrbCrimson = Color(0xFFB71C1C)
+private val OrbOrange = Color(0xFFFF6B35)
+
+@Composable
+private fun OnboardingIdentityOrb(
+    orbSize: Dp = 56.dp,
+    progress: Float = 0f
+) {
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(16)
+            phase.floatValue += 0.016f
+        }
+    }
+
+    Box(
+        modifier = Modifier.size(orbSize),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(orbSize)) {
+            val t = phase.floatValue
+            val px = orbSize.toPx()
+            val cx = px / 2f
+            val cy = px / 2f
+            val r = px / 2f
+
+            val segments = 32
+            val morph = 1f + (1f - progress) * 0.1f
+            val path = Path().apply {
+                for (i in 0..segments) {
+                    val angle = (i.toFloat() / segments) * 2f * kotlin.math.PI.toFloat()
+                    val wave = kotlin.math.sin(angle * 2.5f + t * 0.8f) * 0.06f * morph
+                    val wave2 = kotlin.math.sin(angle * 4f - t * 0.5f) * 0.03f * morph
+                    val radius = r * (0.78f + wave + wave2)
+                    val x = cx + radius * kotlin.math.cos(angle)
+                    val y = cy + radius * kotlin.math.sin(angle)
+                    if (i == 0) moveTo(x, y) else lineTo(x, y)
+                }
+                close()
+            }
+            drawPath(
+                path,
+                Brush.radialGradient(
+                    colors = listOf(
+                        OrbRed.copy(alpha = 0.95f),
+                        OrbCrimson.copy(alpha = 0.7f),
+                        OrbOrange.copy(alpha = 0.3f)
+                    ),
+                    center = androidx.compose.ui.geometry.Offset(cx - r * 0.15f, cy - r * 0.2f),
+                    radius = r
+                )
+            )
+
+            val specShift = t * 0.5f
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.15f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(cx - r * 0.3f, cy - r * 0.3f),
+                    radius = r * 0.3f
+                ),
+                radius = r * 0.3f
+            )
+
+            val glowAlpha = 0.08f * (0.5f + 0.5f * kotlin.math.sin(t * 1.2f))
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(OrbRed.copy(alpha = glowAlpha), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(cx, cy),
+                    radius = r * 1.4f
+                ),
+                radius = r * 1.4f
+            )
+            drawCircle(
+                color = OrbRed.copy(alpha = 0.12f),
+                radius = r * 1.05f,
+                style = Stroke(width = 0.8f)
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// Activation Screen
+// ─────────────────────────────────────────────
+
+@Composable
+private fun StepActivation(onContinue: () -> Unit) {
+    val actPhase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(16)
+            actPhase.floatValue += 0.016f
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier.size(160.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(160.dp)) {
+                val t = actPhase.floatValue
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                for (i in 0..5) {
+                    val orbitR = size.minDimension * (0.25f + 0.1f * (0.5f + 0.5f * kotlin.math.sin(t * 0.3f + i * 1.2f)))
+                    val angle = t * 0.4f + i * 1.047f
+                    val px = cx + orbitR * kotlin.math.cos(angle)
+                    val py = cy + orbitR * kotlin.math.sin(angle)
+                    drawCircle(
+                        Color(0xFFE53935).copy(alpha = 0.06f * (0.5f + 0.5f * kotlin.math.sin(t * 0.5f + i * 0.7f))),
+                        radius = 2.5f + 1.5f * (0.5f + 0.5f * kotlin.math.sin(t + i))
+                    )
+                }
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFE53935).copy(alpha = 0.1f),
+                            Color(0xFFE53935).copy(alpha = 0.03f),
+                            Color.Transparent
+                        ),
+                        center = androidx.compose.ui.geometry.Offset(cx, cy),
+                        radius = size.minDimension * 0.35f
+                    ),
+                    radius = size.minDimension * 0.35f
+                )
+            }
+            OnboardingIdentityOrb(orbSize = 56.dp, progress = 1f)
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Text(
+            text = "Your financial rhythm is ready.",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = "Tether adapts to how you spend,\nsave, and move through money.",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.55f),
+            textAlign = TextAlign.Center,
+            lineHeight = 20.sp,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        )
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        FeaturePayoffCard(
+            illustration = @Composable { PulseLineIllustration() },
+            title = "Real-time tracking",
+            subtitle = "Transactions are detected instantly.",
+            delay = 0
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        FeaturePayoffCard(
+            illustration = @Composable { NeuralOrbIllustration() },
+            title = "Adaptive intelligence",
+            subtitle = "Tether learns your habits and evolves with your behavior.",
+            delay = 1
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        FeaturePayoffCard(
+            illustration = @Composable { MomentumRingIllustration() },
+            title = "Momentum system",
+            subtitle = "Your streak, vibe, and personality react to your decisions.",
+            delay = 2
+        )
+    }
+}
+
+@Composable
+private fun FeaturePayoffCard(
+    illustration: @Composable () -> Unit,
+    title: String,
+    subtitle: String,
+    delay: Int
+) {
+    val visible = remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay((200 + delay * 150).toLong())
+        visible.value = true
+    }
+
+    val cardPhase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(16)
+            cardPhase.floatValue += 0.016f
+        }
+    }
+
+    AnimatedVisibility(
+        visible = visible.value,
+        enter = fadeIn(tween(400)) + slideInVertically(animationSpec = tween(400)) { 30 },
+        exit = fadeOut()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0x14FFFFFF))
+        ) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val t = cardPhase.floatValue
+                val sweepX = size.width * (0.3f + 0.4f * (0.5f + 0.5f * kotlin.math.sin(t * 0.4f)))
+                drawCircle(
+                    Brush.radialGradient(
+                        colors = listOf(Color(0xFFFF453A).copy(alpha = 0.04f), Color.Transparent),
+                        center = androidx.compose.ui.geometry.Offset(sweepX, size.height * 0.5f),
+                        radius = size.minDimension * 0.6f
+                    ),
+                    radius = size.minDimension * 0.6f
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                    illustration()
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.5f),
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Canvas Illustrations ──
+
+@Composable
+private fun PulseLineIllustration() {
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) { kotlinx.coroutines.delay(16); phase.floatValue += 0.016f }
+    }
+    Canvas(modifier = Modifier.size(36.dp)) {
+        val t = phase.floatValue
+        val path = Path()
+        val steps = 20
+        for (i in 0..steps) {
+            val x = (i.toFloat() / steps) * size.width
+            val y = size.height / 2f + kotlin.math.sin((i.toFloat() / steps) * 6f * kotlin.math.PI.toFloat() + t * 2f) * size.height * 0.25f
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, Color(0xFFFF453A).copy(alpha = 0.8f), style = Stroke(width = 1.5f, cap = StrokeCap.Round))
+        for (i in 0..2) {
+            val px = ((t * 0.5f + i * 0.33f) % 1f) * size.width
+            val py = size.height / 2f + kotlin.math.sin(((px / size.width) * 6f * kotlin.math.PI.toFloat()) + t * 2f) * size.height * 0.25f
+            drawCircle(Color(0xFFFF453A).copy(alpha = 0.6f), 2f, androidx.compose.ui.geometry.Offset(px, py))
+        }
+    }
+}
+
+@Composable
+private fun NeuralOrbIllustration() {
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) { kotlinx.coroutines.delay(16); phase.floatValue += 0.016f }
+    }
+    Canvas(modifier = Modifier.size(36.dp)) {
+        val t = phase.floatValue
+        val cx = size.width / 2f; val cy = size.height / 2f
+        val r = size.minDimension * 0.35f
+        val nodes = listOf(
+            androidx.compose.ui.geometry.Offset(cx, cy - r),
+            androidx.compose.ui.geometry.Offset(cx + r, cy),
+            androidx.compose.ui.geometry.Offset(cx, cy + r),
+            androidx.compose.ui.geometry.Offset(cx - r, cy)
+        )
+        for (i in nodes.indices) {
+            for (j in i + 1 until nodes.size) {
+                val alpha = 0.2f + 0.3f * (0.5f + 0.5f * kotlin.math.sin(t * 1.5f + i + j))
+                drawLine(Color(0xFFFF453A).copy(alpha = alpha), nodes[i], nodes[j], strokeWidth = 0.8f)
+            }
+        }
+        val pulseR = r * (0.5f + 0.2f * kotlin.math.sin(t * 1.2f))
+        drawCircle(Color(0xFFFF453A).copy(alpha = 0.15f), pulseR, androidx.compose.ui.geometry.Offset(cx, cy))
+        for (i in nodes.indices) {
+            val drift = 2f * kotlin.math.sin(t * 1.8f + i * 2f)
+            val pos = nodes[i] + androidx.compose.ui.geometry.Offset(drift, drift * 0.5f)
+            drawCircle(Color(0xFFFF453A).copy(alpha = 0.6f), 2.5f, pos)
+        }
+        drawCircle(Color(0xFFFF453A).copy(alpha = 0.3f), 1.5f, androidx.compose.ui.geometry.Offset(cx, cy))
+    }
+}
+
+@Composable
+private fun MomentumRingIllustration() {
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) { kotlinx.coroutines.delay(16); phase.floatValue += 0.016f }
+    }
+    Canvas(modifier = Modifier.size(36.dp)) {
+        val t = phase.floatValue
+        val cx = size.width / 2f; val cy = size.height / 2f
+        val r = size.minDimension * 0.38f
+        for (layer in 0 until 2) {
+            val sweep = 180f + 90f * (0.5f + 0.5f * kotlin.math.sin(t * 0.5f + layer))
+            val startAngle = t * 60f + layer * 120f
+            val path = Path()
+            val steps = 12
+            for (i in 0..steps) {
+                val angle = ((startAngle + sweep * i / steps) * kotlin.math.PI.toFloat() / 180f)
+                val radius = r + layer * 3f
+                val x = cx + radius * kotlin.math.cos(angle)
+                val y = cy + radius * kotlin.math.sin(angle)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, Color(0xFFFF453A).copy(alpha = 0.25f - layer * 0.08f), style = Stroke(width = 1.5f, cap = StrokeCap.Round))
+        }
+        val progress = 0.3f + 0.7f * (0.5f + 0.5f * kotlin.math.sin(t * 0.3f))
+        val angle = t * 40f
+        val dotR = r * 0.7f
+        val dx = cx + dotR * kotlin.math.cos(angle)
+        val dy = cy + dotR * kotlin.math.sin(angle)
+        drawCircle(Color(0xFFFF453A).copy(alpha = 0.8f), 2f, androidx.compose.ui.geometry.Offset(dx, dy))
+    }
+}
+
+// ─────────────────────────────────────────────
 // Validation
 // ─────────────────────────────────────────────
 
-fun isStepValid(step: Int, name: String, balance: String, goal: String, commitment: Double, auth: Boolean): Boolean {
+fun isStepValid(
+    step: Int,
+    name: String,
+    balance: String,
+    goal: String,
+    commitment: Double,
+    auth: Boolean,
+    notificationListenerEnabled: Boolean = false,
+    termsAccepted: Boolean = true
+): Boolean {
     return when (step) {
-        1    -> name.isNotBlank()
-        2    -> balance.isNotBlank()
-        3    -> goal.isNotBlank()
-        4    -> commitment > 0.0
-        5    -> true
-        6    -> auth
-        7    -> true  // button itself handles permission logic
+        1    -> termsAccepted
+        2    -> true
+        3    -> balance.isNotBlank()
+        4    -> goal.isNotBlank()
+        5    -> commitment > 0.0
+        6    -> notificationListenerEnabled
+        7    -> true
         else -> false
     }
 }

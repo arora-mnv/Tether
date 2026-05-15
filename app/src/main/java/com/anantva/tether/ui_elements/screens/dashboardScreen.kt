@@ -81,7 +81,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.anantva.tether.BuildConfig
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.model.AvatarCatalog
 import com.anantva.tether.data.repository.UserData
@@ -90,6 +89,7 @@ import com.anantva.tether.ui_elements.components.AvatarPickerGrid
 import com.anantva.tether.ui_elements.components.FinancialAuraAvatar
 import com.anantva.tether.ui_elements.components.TetherBottomNavBar
 import com.anantva.tether.ui.theme.VintageCream
+import com.google.firebase.BuildConfig
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -268,7 +268,7 @@ fun DashboardScreen(
     var showManualEntry by remember { mutableStateOf(false) }
     var showPendingList by remember { mutableStateOf(false) }
     var showProfile by remember { mutableStateOf(false) }
-    val userAvatarId = user?.avatarId ?: "chill_cat"
+    val userAvatarId = user?.avatarId ?: com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId
     val userName = user?.displayName ?: "there"
 
     val context = LocalContext.current
@@ -412,7 +412,7 @@ fun HomeContent(
     onSeeAllPending: () -> Unit,
     onOpenProfile: () -> Unit,
     userName: String = "there",
-    userAvatarId: String = "chill_cat",
+    userAvatarId: String = com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId,
     insightsState: com.anantva.tether.ui_elements.screens.InsightsUiState? = null,
     onNavigateToInsights: () -> Unit = {},
     onNavigateToVault: () -> Unit = {},
@@ -470,7 +470,7 @@ fun formatCurrency(amount: Double): String {
 private fun DashboardTopBar(
     onOpenProfile: () -> Unit,
     userName: String = "there",
-    userAvatarId: String = "chill_cat",
+    userAvatarId: String = com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId,
     usagePercent: Float = 0f
 ) {
     Row(
@@ -480,7 +480,7 @@ private fun DashboardTopBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "Hi, $userName",
                 color = Color.White,
