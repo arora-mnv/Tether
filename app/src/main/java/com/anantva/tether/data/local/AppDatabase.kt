@@ -8,10 +8,12 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.anantva.tether.data.local.dao.CategoryCorrectionDao
 import com.anantva.tether.data.local.dao.GoalDao
+import com.anantva.tether.data.local.dao.MerchantPatternDao
 import com.anantva.tether.data.local.dao.TransactionDao
 import com.anantva.tether.data.local.dao.UserProfileDao
 import com.anantva.tether.data.local.entity.CategoryCorrectionEntity
 import com.anantva.tether.data.local.entity.GoalEntity
+import com.anantva.tether.data.local.entity.MerchantPatternEntity
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.local.entity.UserProfileEntity
 
@@ -21,9 +23,10 @@ import com.anantva.tether.data.local.entity.UserProfileEntity
         UserProfileEntity::class,
         TransactionEntity::class,
         GoalEntity::class,
-        CategoryCorrectionEntity::class
+        CategoryCorrectionEntity::class,
+        MerchantPatternEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun goalDao(): GoalDao
     abstract fun transactionDao(): TransactionDao
     abstract fun categoryCorrectionDao(): CategoryCorrectionDao
+    abstract fun merchantPatternDao(): MerchantPatternDao
 
     companion object {
         // @Volatile ensures this variable is instantly updated across all threads
@@ -105,6 +109,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS merchant_patterns (" +
+                    "normalizedMerchant TEXT NOT NULL PRIMARY KEY, " +
+                    "category TEXT NOT NULL, " +
+                    "confidenceScore REAL NOT NULL DEFAULT 0.5, " +
+                    "usageCount INTEGER NOT NULL DEFAULT 1, " +
+                    "lastUsedTimestamp INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -112,7 +129,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tether_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
 
                 INSTANCE = instance

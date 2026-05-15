@@ -96,6 +96,13 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
+    // DEBUG ONLY — REMOVE BEFORE RELEASE
+    suspend fun setStreakDays(streak: Int) {
+        dataStore.edit { prefs ->
+            prefs[PreferencesKeys.STREAK_DAYS] = streak
+        }
+    }
+
     suspend fun updateStreakAndCheckDate(newStreak: Int, epochDay: Long) {
         dataStore.edit { prefs ->
             prefs[PreferencesKeys.STREAK_DAYS]       = newStreak

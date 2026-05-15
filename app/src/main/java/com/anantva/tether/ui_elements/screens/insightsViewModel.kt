@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.anantva.tether.data.local.dao.CategorySpend
 import com.anantva.tether.data.repository.TetherRepository
+import com.anantva.tether.behavior.BehaviorLearningEngine
 import com.anantva.tether.insights.InsightsEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,7 +46,11 @@ data class InsightsUiState(
     val observations: List<String> = emptyList(),
     val dailyMood: String = "",
     val isOverLimit: Boolean = false,
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val personalityTitle: String = "Reading your rhythm\u2026",
+    val personalityDescription: String = "Learning your financial patterns over time.",
+    val personalityWaveformSharpness: Float = 0f,
+    val personalityWaveformSpeed: Float = 0.8f
 )
 
 @HiltViewModel
@@ -53,7 +58,8 @@ class InsightsViewModel @Inject constructor(
     private val tetherRepository: TetherRepository,
     private val insightsEngine: InsightsEngine,
     private val preferencesRepository: UserPreferencesRepository,
-    private val calculateDailyLimit: CalculateDailyLimitUseCase
+    private val calculateDailyLimit: CalculateDailyLimitUseCase,
+    private val behaviorEngine: BehaviorLearningEngine
 ) : ViewModel() {
 
     private val zone = ZoneId.systemDefault()
@@ -69,7 +75,7 @@ class InsightsViewModel @Inject constructor(
     ) { dailyExpenseNullable, allTransactions ->
         val dailyLimit = (dailyExpenseNullable ?: 0).coerceAtLeast(1)
         val today = LocalDate.now()
-        val weekDays = (0..6).map { today.minusDays((today.dayOfWeek.value - 1 - it).toLong()) }.reversed()
+        val weekDays = (0..6).map { today.with(DayOfWeek.MONDAY).plusDays(it.toLong()) }
 
         weekDays.map { date ->
             val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
@@ -86,9 +92,9 @@ class InsightsViewModel @Inject constructor(
     )
 
     val trendLabels: List<String> = run {
-        val today = LocalDate.now()
+        val monday = LocalDate.now().with(DayOfWeek.MONDAY)
         (0..6).map { offset ->
-            today.minusDays((today.dayOfWeek.value - 1 - (6 - offset)).toLong())
+            monday.plusDays(offset.toLong())
                 .dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
         }
     }
@@ -96,8 +102,9 @@ class InsightsViewModel @Inject constructor(
     val uiState: StateFlow<InsightsUiState> = combine(
         tetherRepository.getAllTransactions(),
         preferencesRepository.currentBalance,
-        preferencesRepository.monthlyCommitment
-    ) { transactions, balanceStr, commitmentStr ->
+        preferencesRepository.monthlyCommitment,
+        preferencesRepository.streakDays
+    ) { transactions, balanceStr, commitmentStr, streakDays ->
         val balance = balanceStr.toIntOrNull() ?: 0
         val monthlyCommitment = commitmentStr.toIntOrNull() ?: 0
 
@@ -120,9 +127,17 @@ class InsightsViewModel @Inject constructor(
         val daily = insightsEngine.getDailyInsight(today, dailyLimitResult.exceeded)
         val weekly = insightsEngine.getWeeklyInsight(today)
 
-        val (personality, emoji, supporting) = computePersonality(daily, weekly, dailyLimitResult.exceeded)
-        val mood = computeDailyMood(daily, dailyLimitResult.exceeded)
-        val obs = computeObservations(daily, weekly)
+        val behaviorSnapshot = behaviorEngine.computeSnapshot(
+            transactions = transactions,
+            streakDays = streakDays,
+            isOverLimit = dailyLimitResult.exceeded,
+            spentToday = spentToday
+        )
+        val (personality, emoji, supporting) = personalityWithBehavior(
+            daily, weekly, dailyLimitResult.exceeded, streakDays, behaviorSnapshot
+        )
+        val mood = computeDailyMood(daily, dailyLimitResult.exceeded, behaviorSnapshot)
+        val obs = computeObservations(daily, weekly, dailyLimitResult.exceeded, streakDays)
 
         InsightsUiState(
             dailyTotalSpend = daily.totalSpend,
@@ -152,7 +167,11 @@ class InsightsViewModel @Inject constructor(
             observations = obs,
             dailyMood = mood,
             isOverLimit = dailyLimitResult.exceeded,
-            isLoading = false
+            isLoading = false,
+            personalityTitle = behaviorSnapshot.personalityProfile.title,
+            personalityDescription = behaviorSnapshot.personalityProfile.description,
+            personalityWaveformSharpness = behaviorSnapshot.personalityProfile.waveformSharpness,
+            personalityWaveformSpeed = behaviorSnapshot.personalityProfile.waveformSpeed
         )
     }.stateIn(
         scope = viewModelScope,
@@ -162,42 +181,93 @@ class InsightsViewModel @Inject constructor(
 
     fun refresh() {}
 
-    private fun computePersonality(
+    private fun personalityWithBehavior(
         daily: InsightsEngine.DailyInsight,
         weekly: InsightsEngine.WeeklyInsight,
-        isOverLimit: Boolean
-    ): Triple<String, String, String> = when {
-        daily.totalSpend == 0 -> Triple("Clean", "🧘", "Zero spend. Wallet is resting.")
-        isOverLimit && daily.wantSpend > daily.needSpend -> Triple("Chaotic", "🌪️", "Overshot and mostly on wants.")
-        isOverLimit -> Triple("Rebounding", "🔄", "Went over. Tomorrow is a reset.")
-        daily.healthScore >= 0.85f -> Triple("Elite", "👑", "High discipline. Low noise.")
-        daily.healthScore >= 0.7f -> Triple("Consistent", "⚡", "Steady spending. Streak-friendly.")
-        daily.wantSpend == 0 && daily.needSpend > 0 -> Triple("Survival mode", "💪", "All essentials today.")
-        daily.needWantRatio >= 3f -> Triple("Controlled", "🎯", "Needs far outweighed wants.")
-        daily.needWantRatio >= 1.5f -> Triple("Balanced", "⚖️", "Healthy mix of needs and wants.")
-        daily.wantSpend > daily.needSpend * 2 -> Triple("Impulsive", "🔥", "Wants doubled the needs today.")
-        daily.discretionarySpend > daily.totalSpend * 0.6f -> Triple("Reactive", "💨", "Most of today was optional spend.")
-        daily.healthScore >= 0.5f -> Triple("Steady", "🌱", "Nothing extreme. Clean enough.")
-        else -> Triple("Aware", "👀", "Spending happened. First step is noticing.")
+        isOverLimit: Boolean,
+        streakDays: Int,
+        behavior: com.anantva.tether.behavior.BehaviorSnapshot
+    ): Triple<String, String, String> {
+        if (daily.totalSpend == 0) return Triple("Clean", "🧘", "Zero spend. Wallet is resting.")
+
+        val behaviorPersonality = behavior.currentPersonality
+        val mapping = behaviorPersonalityToDisplay(behaviorPersonality)
+        if (mapping != null) return mapping
+
+        return when {
+            streakDays == 0 && isOverLimit && daily.totalSpend > 0 -> Triple("Slipped", "📉", "The streak reset today.")
+            isOverLimit && daily.wantSpend > daily.needSpend -> Triple("Chaotic", "🌪️", "Overshot and mostly on wants.")
+            isOverLimit -> Triple("Rebounding", "🔄", "Went over. Tomorrow is a reset.")
+            else -> {
+                val trend = behavior.behavioralTrend
+                val msg = when (trend) {
+                    "IMPROVING" -> "Spending patterns are trending better."
+                    "WORSENING" -> "Keep an eye on the trend."
+                    else -> "Patterns are stable."
+                }
+                Triple(behaviorPersonality, behaviorEmoji(behaviorPersonality), msg)
+            }
+        }
+    }
+
+    private fun behaviorPersonalityToDisplay(p: String): Triple<String, String, String>? = when (p) {
+        "Disciplined" -> Triple("Disciplined", "👑", "Controlled spending. Consistent choices.")
+        "Stable" -> Triple("Stable", "🌊", "Smooth spending rhythm. No spikes.")
+        "Controlled" -> Triple("Controlled", "🎯", "Intentional spending. Needs prioritized.")
+        "Balanced" -> Triple("Balanced", "⚖️", "Healthy mix of needs and wants.")
+        "Coasting" -> Triple("Coasting", "💨", "Mostly optional spend today.")
+        "Impulsive" -> Triple("Impulsive", "🔥", "Wants outpaced needs.")
+        "Spiraling" -> Triple("Spiraling", "🌪️", "Spending patterns are scattering.")
+        "Reactive" -> Triple("Reactive", "⚡", "Reacting rather than planning.")
+        "Aware" -> Triple("Aware", "👀", "Noticing patterns. First step.")
+        else -> null
+    }
+
+    private fun behaviorEmoji(p: String): String = when (p) {
+        "Disciplined" -> "👑"
+        "Stable" -> "🌊"
+        "Controlled" -> "🎯"
+        "Balanced" -> "⚖️"
+        "Coasting" -> "💨"
+        "Impulsive" -> "🔥"
+        "Spiraling" -> "🌪️"
+        "Reactive" -> "⚡"
+        "Aware" -> "👀"
+        else -> "🧠"
     }
 
     private fun computeDailyMood(
         daily: InsightsEngine.DailyInsight,
-        isOverLimit: Boolean
+        isOverLimit: Boolean,
+        behavior: com.anantva.tether.behavior.BehaviorSnapshot
     ): String = when {
         daily.totalSpend == 0 -> "clean"
         isOverLimit -> "bad"
         daily.healthScore >= 0.8f -> "great"
         daily.healthScore >= 0.6f -> "good"
+        behavior.currentPersonality == "Spiraling" || behavior.currentPersonality == "Reactive" -> "bad"
+        behavior.currentPersonality == "Impulsive" -> "mixed"
+        behavior.impulseScore >= 0.6f -> "mixed"
         daily.healthScore >= 0.4f -> "mixed"
         else -> "bad"
     }
 
     private fun computeObservations(
         daily: InsightsEngine.DailyInsight,
-        weekly: InsightsEngine.WeeklyInsight
+        weekly: InsightsEngine.WeeklyInsight,
+        isOverLimit: Boolean,
+        streakDays: Int
     ): List<String> {
         val result = mutableListOf<String>()
+
+        if (streakDays == 0 && isOverLimit) {
+            val topCat = daily.topCategory
+            if (topCat != "No spending" && topCat != "Other") {
+                result.add("${topCat} pushed spending over the edge today.")
+            } else {
+                result.add("The streak slipped today.")
+            }
+        }
 
         if (daily.topCategory != "No spending" && daily.topCategoryAmount > 0) {
             result.add("${daily.topCategory} led today's spending.")

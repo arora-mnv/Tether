@@ -1,7 +1,6 @@
 package com.anantva.tether
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -18,10 +17,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
-import com.anantva.tether.data.repository.SyncManager
-import com.anantva.tether.data.repository.SyncResult
 import com.anantva.tether.state.AppStartState
 import com.anantva.tether.ui.theme.TetherTheme
 import com.anantva.tether.ui_elements.screens.AuthScreen
@@ -41,12 +37,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var preferencesRepository: UserPreferencesRepository
-
-    @Inject
-    lateinit var authManager: FirebaseAuthManager
-
-    @Inject
-    lateinit var syncManager: SyncManager
 
     private val authViewModel: AuthViewModel by viewModels()
 
@@ -91,41 +81,13 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // Cloud sync state
-                    val isCloudSyncEnabled by preferencesRepository
-                        .isCloudStorage
-                        .collectAsState(initial = false)
-
                     // Auth state from AuthViewModel
                     val authState by authViewModel.uiState.collectAsState()
                     val isLoggedIn = authState.isLoggedIn
 
-                    // Sync with Firestore when user logs in
-                    LaunchedEffect(isLoggedIn, isCloudSyncEnabled) {
-                        if (isLoggedIn && isCloudSyncEnabled) {
-                            val userId = authState.userId
-                            if (!userId.isNullOrEmpty()) {
-                                try {
-                                    syncManager.syncAll(userId).collect { result ->
-                                        when (result) {
-                                            is SyncResult.Syncing -> {
-                                                Log.d("MainActivity", "Sync in progress: ${result.message}")
-                                            }
-                                            is SyncResult.Done -> {
-                                                Log.d("MainActivity", "Sync complete: ${result.message}")
-                                            }
-                                            is SyncResult.Error -> {
-                                                Log.e("MainActivity", "Sync error: ${result.message}")
-                                            }
-                                            else -> {}
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e("MainActivity", "Sync failed", e)
-                                }
-                            }
-                        }
-                    }
+                    val isCloudSyncEnabled by preferencesRepository
+                        .isCloudStorage
+                        .collectAsState(initial = false)
 
                     // Compute start destination BEFORE NavHost renders
                     val startDestination = when {

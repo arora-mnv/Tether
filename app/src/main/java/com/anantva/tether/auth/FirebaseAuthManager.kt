@@ -200,6 +200,8 @@ class FirebaseAuthManager {
 
     fun getCurrentUserPhone(): String? = auth.currentUser?.phoneNumber
 
+    fun getCurrentUserPhotoUrl(): String? = auth.currentUser?.photoUrl?.toString()
+
     fun signOut() {
         auth.signOut()
     }

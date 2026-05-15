@@ -51,14 +51,5 @@
             </intent-filter>
         </service>
 
-        <!-- ✅ Fixed: com.anantva.tether.services (plural) to match actual package -->
-        <receiver
-            android:name=".services.BootReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
     </application>
 </manifest>

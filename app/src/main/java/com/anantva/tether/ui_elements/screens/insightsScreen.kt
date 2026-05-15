@@ -2,14 +2,7 @@ package com.anantva.tether.ui_elements.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -38,10 +31,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +53,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anantva.tether.ui.theme.TetherRed
+import com.anantva.tether.ui_elements.components.AvatarIcon
+import com.anantva.tether.ui_elements.components.FinancialAuraAvatar
 import com.anantva.tether.ui.theme.VintageCream
 import java.time.LocalDate
 import kotlin.math.sin
@@ -125,7 +124,8 @@ private fun dayDotColor(level: String): Color = when (level) {
     else -> GrimeGrey
 }
 
-private fun computeMorphFactor(mood: String, healthScore: Float, isOverLimit: Boolean): Float = when {
+private fun computeMorphFactor(mood: String, healthScore: Float, isOverLimit: Boolean, streakDays: Int): Float = when {
+    streakDays == 0 && isOverLimit -> 0.95f
     mood == "great" && healthScore >= 0.8f -> 0f
     mood == "good" || mood == "clean" -> 0.1f
     mood == "mixed" -> 0.5f
@@ -177,16 +177,62 @@ private fun financialPersonalitySubtext(
     else -> insight.takeIf { it.isNotBlank() } ?: "Keep going."
 }
 
-private fun vibeLabel(state: InsightsUiState): String = when {
-    state.isOverLimit && state.dailyWantSpend > state.dailyNeedSpend -> if (state.dailyHealthScore < 0.4f) "Slipping" else "Impulsive"
-    state.isOverLimit -> "Overspending"
-    state.dailyTotalSpend == 0 -> "Calm"
-    state.dailyNeedWantRatio >= 3f -> "Controlled"
-    state.dailyNeedWantRatio >= 1.5f -> "Efficient"
-    state.dailyWantSpend > state.dailyNeedSpend * 2 -> "Impulsive"
-    state.dailyDiscretionary < state.dailyTotalSpend * 0.3f -> "Stable"
-    state.dailyHealthScore >= 0.7f -> "Consistent"
-    else -> "Stable"
+private data class FinancialEmotionState(
+    val title: String,
+    val subtitle: String,
+    val stressLevel: Float,
+    val waveformSharpness: Float,
+    val motionIntensity: Float,
+    val chaosLevel: Float,
+    val glowStrength: Float
+)
+
+private fun computeEmotion(
+    usagePercent: Float,
+    wantsRatio: Float,
+    streakDays: Int,
+    isOverLimit: Boolean
+): FinancialEmotionState {
+    val u = usagePercent.coerceIn(0f, 1.2f)
+    val w = wantsRatio.coerceIn(0f, 1f)
+
+    return when {
+        isOverLimit || u > 1f -> FinancialEmotionState(
+            title = "Chaotic", subtitle = "You've pushed past today's limit.",
+            stressLevel = 1.2f, waveformSharpness = 1f, motionIntensity = 2.5f,
+            chaosLevel = 1f, glowStrength = 1.5f
+        )
+        u > 0.9f -> FinancialEmotionState(
+            title = "Restless", subtitle = "Your spending energy is spiking.",
+            stressLevel = 1f, waveformSharpness = 0.85f, motionIntensity = 2f,
+            chaosLevel = 0.7f, glowStrength = 1.4f
+        )
+        u > 0.75f -> FinancialEmotionState(
+            title = "Tense", subtitle = "Approaching today's edge.",
+            stressLevel = 0.8f, waveformSharpness = 0.6f, motionIntensity = 1.6f,
+            chaosLevel = 0.4f, glowStrength = 1.2f
+        )
+        u > 0.55f -> FinancialEmotionState(
+            title = "Active", subtitle = "Spending picked up today.",
+            stressLevel = 0.5f, waveformSharpness = 0.3f, motionIntensity = 1.3f,
+            chaosLevel = 0.2f, glowStrength = 1.1f
+        )
+        u > 0.35f -> FinancialEmotionState(
+            title = "Balanced", subtitle = "Healthy movement today.",
+            stressLevel = 0.3f, waveformSharpness = 0.1f, motionIntensity = 1.1f,
+            chaosLevel = 0.1f, glowStrength = 1f
+        )
+        u > 0.15f -> FinancialEmotionState(
+            title = "Focused", subtitle = "Controlled spending rhythm.",
+            stressLevel = 0.15f, waveformSharpness = 0f, motionIntensity = 1f,
+            chaosLevel = 0f, glowStrength = 0.9f
+        )
+        else -> FinancialEmotionState(
+            title = "Calm", subtitle = "Easy pace. Plenty of room today.",
+            stressLevel = 0f, waveformSharpness = 0f, motionIntensity = 0.8f,
+            chaosLevel = 0f, glowStrength = 0.8f
+        )
+    }
 }
 
 @Composable
@@ -196,7 +242,8 @@ fun InsightsScreen(
     spendTrendValues: List<Int>,
     trendLabels: List<String>,
     uiState: DashboardUiState,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    avatarId: String = "pulse"
 ) {
     if (insightsState.isLoading) {
         Box(
@@ -225,7 +272,15 @@ fun InsightsScreen(
         item { HeroInsightCard(insightsState = insightsState, streakDays = uiState.streakDays) }
 
         if (hasData) {
-            item { SpendingPersonalityCard(insightsState = insightsState) }
+            val usagePercent = if (uiState.dailyLimit > 0) {
+                uiState.dailySpent.toFloat() / uiState.dailyLimit
+            } else 0f
+            item { SpendingPersonalityCard(
+                insightsState = insightsState,
+                streakDays = uiState.streakDays,
+                avatarId = avatarId,
+                usagePercent = usagePercent
+            ) }
 
             item {
                 if (spendTrendValues.isNotEmpty() && trendLabels.isNotEmpty()) {
@@ -244,46 +299,66 @@ fun InsightsScreen(
     }
 }
 
+private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+
+private fun triangleWave(t: Float): Float {
+    val n = (t % (2f * PI.toFloat())) / (2f * PI.toFloat())
+    return if (n < 0.5f) 4f * n - 1f else 3f - 4f * n
+}
+
+private fun sawWave(t: Float): Float {
+    val n = (t % (2f * PI.toFloat())) / (2f * PI.toFloat())
+    return 2f * n - 1f
+}
+
+private fun squareWave(t: Float): Float {
+    val n = (t % (2f * PI.toFloat())) / (2f * PI.toFloat())
+    return if (n < 0.5f) 1f else -1f
+}
+
+private fun morphWaveform(t: Float, morph: Float): Float {
+    val sinW = sin(t)
+    val triW = triangleWave(t)
+    val sawW = sawWave(t)
+    val sqrW = squareWave(t)
+    return when {
+        morph <= 0.25f -> lerp(sinW, triW, morph / 0.25f)
+        morph <= 0.5f -> lerp(triW, sawW, (morph - 0.25f) / 0.25f)
+        morph <= 0.75f -> lerp(sawW, sqrW, (morph - 0.5f) / 0.25f)
+        else -> {
+            val blend = (morph - 0.75f) / 0.25f
+            lerp(sqrW, sqrW * 1.5f, blend)
+        }
+    }
+}
+
+private fun seamlessGlow(freq: Float, phase: Float): Float =
+    0.55f + 0.15f * sin(phase * freq * 2f * PI.toFloat())
+
+@Composable
+private fun rememberContinuousPhase(speed: Float): Float {
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(16)
+            phase.floatValue += 0.016f * speed
+        }
+    }
+    return phase.floatValue
+}
+
 @Composable
 private fun HeroInsightCard(insightsState: InsightsUiState, streakDays: Int = 0) {
-    val morph = computeMorphFactor(insightsState.dailyMood, insightsState.dailyHealthScore, insightsState.isOverLimit)
+    val profileMorph = insightsState.personalityWaveformSharpness
+    val profileSpeed = insightsState.personalityWaveformSpeed
+    val morph = profileMorph
     val (primaryColor, _) = waveformAccentColors(morph)
 
-    val infTrans = rememberInfiniteTransition(label = "personality")
-    val wavePhase by infTrans.animateFloat(
-        initialValue = 0f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "phase"
-    )
-    val glowAlpha by infTrans.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 0.7f,
-        animationSpec = infiniteRepeatable(tween(2400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "glow"
-    )
+    val phase = rememberContinuousPhase(profileSpeed)
+    val glowAlpha = seamlessGlow(0.42f, phase)
 
-    val personality = financialPersonality(
-        dailyMood = insightsState.dailyMood,
-        healthScore = insightsState.dailyHealthScore,
-        streakDays = streakDays,
-        needWantRatio = insightsState.dailyNeedWantRatio,
-        wantSpend = insightsState.dailyWantSpend,
-        needSpend = insightsState.dailyNeedSpend,
-        discretionarySpend = insightsState.dailyDiscretionary,
-        totalSpend = insightsState.dailyTotalSpend,
-        isOverLimit = insightsState.isOverLimit
-    )
-
-    val subtext = financialPersonalitySubtext(
-        dailyMood = insightsState.dailyMood,
-        healthScore = insightsState.dailyHealthScore,
-        streakDays = streakDays,
-        needWantRatio = insightsState.dailyNeedWantRatio,
-        totalSpend = insightsState.dailyTotalSpend,
-        isOverLimit = insightsState.isOverLimit,
-        insight = insightsState.dailyInsightMessage
-    )
+    val personalityTitle = insightsState.personalityTitle
+    val personalityDesc = insightsState.personalityDescription
 
     Box(
         modifier = Modifier
@@ -302,27 +377,28 @@ private fun HeroInsightCard(insightsState: InsightsUiState, streakDays: Int = 0)
             val waveColor = primaryColor
             val cy = size.height / 2f
             val morphClamped = morph.coerceIn(0f, 1f)
+            val wavePhase = phase
 
             for (layer in 0 until 5) {
                 val layerAlpha = (0.05f - layer * 0.008f).coerceAtLeast(0.01f)
                 val ampBase = size.height * (0.08f + layer * 0.04f)
-                val speedBase = 1f - layer * 0.12f
-                val phaseOffset = layer * 1.2f
+                val speedBase = 1f - layer * 0.1f
+                val phaseOffset = layer * 1.8f
+                val layerMorph = ((morphClamped + layer * 0.08f).coerceIn(0f, 1f))
 
                 val f1 = 0.8f + layer * 0.2f
-                val f2 = 1.6f + layer * 0.4f
-                val chaosMix = 0.2f + morphClamped * 0.6f
+                val f2 = 1.4f + layer * 0.3f
 
                 val path = Path()
                 var first = true
                 var x = 0f
                 while (x <= size.width) {
-                    val t1 = x / size.width * 2f * PI.toFloat() * f1 + wavePhase * 0.015f * speedBase + phaseOffset
-                    val t2 = x / size.width * 2f * PI.toFloat() * f2 + wavePhase * 0.025f * speedBase - phaseOffset
+                    val t1 = x / size.width * 2f * PI.toFloat() * f1 + wavePhase * speedBase + phaseOffset
+                    val t2 = x / size.width * 2f * PI.toFloat() * f2 + wavePhase * speedBase * 0.6f - phaseOffset
 
-                    val wave1 = sin(t1)
-                    val wave2 = sin(t2) * chaosMix
-                    val y = cy + ampBase * (wave1 + wave2)
+                    val wave1 = morphWaveform(t1, layerMorph)
+                    val wave2 = morphWaveform(t2, morphClamped) * 0.3f
+                    val y = cy + ampBase * (wave1 * 0.65f + wave2 * 0.35f)
 
                     if (first) { path.moveTo(x, y); first = false }
                     else path.lineTo(x, y)
@@ -338,12 +414,12 @@ private fun HeroInsightCard(insightsState: InsightsUiState, streakDays: Int = 0)
 
                 drawPath(
                     fillPath,
-                    waveColor.copy(alpha = layerAlpha * 0.3f * (0.5f + 0.5f * glowAlpha))
+                    waveColor.copy(alpha = layerAlpha * 0.3f * (0.4f + 0.6f * glowAlpha))
                 )
 
                 drawPath(
                     path,
-                    waveColor.copy(alpha = layerAlpha * (0.5f + 0.5f * glowAlpha)),
+                    waveColor.copy(alpha = layerAlpha * (0.4f + 0.6f * glowAlpha)),
                     style = Stroke(width = (1.5f - layer * 0.2f).dp.toPx())
                 )
             }
@@ -367,7 +443,7 @@ private fun HeroInsightCard(insightsState: InsightsUiState, streakDays: Int = 0)
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = personality,
+                        text = personalityTitle,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -376,7 +452,7 @@ private fun HeroInsightCard(insightsState: InsightsUiState, streakDays: Int = 0)
             }
             Spacer(Modifier.height(14.dp))
             Text(
-                text = subtext,
+                text = personalityDesc,
                 fontSize = 14.sp,
                 color = DimWhite,
                 lineHeight = 19.sp
@@ -448,27 +524,24 @@ private fun moodText(mood: String): String = when (mood) {
 }
 
 @Composable
-private fun SpendingPersonalityCard(insightsState: InsightsUiState) {
-    val needs = insightsState.dailyNeedSpend.toFloat().coerceAtLeast(0f)
-    val wants = insightsState.dailyWantSpend.toFloat().coerceAtLeast(0f)
-    val total = needs + wants
-    val blendRatio = if (total > 0f) wants / total else 0.5f
-
-    val vibeTransition = rememberInfiniteTransition(label = "vibe")
-    val breathAlpha by vibeTransition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breath"
-    )
-
-    val vibeLabel = vibeLabel(insightsState)
+private fun SpendingPersonalityCard(
+    insightsState: InsightsUiState,
+    streakDays: Int = 0,
+    avatarId: String = "pulse",
+    usagePercent: Float = 0f
+) {
+    val wantsTotal = (insightsState.dailyWantSpend + insightsState.dailyNeedSpend).coerceAtLeast(1)
+    val wantsRatio = insightsState.dailyWantSpend.toFloat() / wantsTotal
+    val emotion = computeEmotion(usagePercent, wantsRatio, streakDays, insightsState.isOverLimit)
     var expanded by remember { mutableStateOf(false) }
 
-    val orbColorR = Color(0xFF2ECC71).red * (1f - blendRatio) + Color(0xFFE74C3C).red * blendRatio
-    val orbColorG = Color(0xFF2ECC71).green * (1f - blendRatio) + Color(0xFFE74C3C).green * blendRatio
-    val orbColorB = Color(0xFF2ECC71).blue * (1f - blendRatio) + Color(0xFFE74C3C).blue * blendRatio
-    val orbAccent = Color(orbColorR, orbColorG, orbColorB)
+    val stressAccent = when {
+        emotion.stressLevel > 1f -> Color(0xFFE74C3C)
+        emotion.stressLevel > 0.8f -> Color(0xFFFF6B35)
+        emotion.stressLevel > 0.5f -> Color(0xFFFFB74D)
+        emotion.stressLevel > 0.2f -> Color(0xFF4FC3F7)
+        else -> Color(0xFF2ECC71)
+    }
 
     Box(
         modifier = Modifier
@@ -478,17 +551,17 @@ private fun SpendingPersonalityCard(insightsState: InsightsUiState) {
             .clickable { expanded = !expanded }
             .animateContentSize(
                 animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium
                 )
             )
     ) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                EnergyOrb(
-                    blendRatio = blendRatio,
-                    breathAlpha = breathAlpha,
-                    modifier = Modifier.size(88.dp)
+                FinancialAuraAvatar(
+                    avatarId = avatarId,
+                    size = 80.dp,
+                    usagePercent = usagePercent
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -500,14 +573,14 @@ private fun SpendingPersonalityCard(insightsState: InsightsUiState) {
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = vibeLabel,
+                        text = emotion.title,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = insightsState.personalitySupporting.ifEmpty { "No data yet." },
+                        text = emotion.subtitle,
                         fontSize = 13.sp,
                         color = DimWhite,
                         lineHeight = 17.sp
@@ -517,8 +590,10 @@ private fun SpendingPersonalityCard(insightsState: InsightsUiState) {
 
             AnimatedVisibility(
                 visible = expanded,
-                enter = fadeIn(tween(300)) + expandVertically(tween(300)),
-                exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
+                enter = fadeIn(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) +
+                    expandVertically(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)),
+                exit = fadeOut(animationSpec = tween(200)) +
+                    shrinkVertically(animationSpec = tween(200))
             ) {
                 Column {
                     Spacer(Modifier.height(20.dp))
@@ -582,81 +657,11 @@ private fun SpendingPersonalityCard(insightsState: InsightsUiState) {
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            orbAccent.copy(alpha = 0.04f * breathAlpha),
+                            stressAccent.copy(alpha = 0.04f),
                             Color.Transparent
                         )
                     )
                 )
-        )
-    }
-}
-
-@Composable
-private fun EnergyOrb(
-    blendRatio: Float,
-    breathAlpha: Float,
-    modifier: Modifier = Modifier
-) {
-    val infTrans = rememberInfiniteTransition(label = "orb")
-    val phase by infTrans.animateFloat(
-        initialValue = 0f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(
-            tween((8000 - 3000 * blendRatio).toInt(), easing = LinearEasing),
-            RepeatMode.Restart
-        ),
-        label = "morph"
-    )
-
-    Canvas(modifier = modifier) {
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val r = minOf(size.width, size.height) / 2f
-        val morphAmp = 0.04f + 0.08f * blendRatio
-        val adjustedPhase = phase * 0.04f
-
-        val path = Path()
-        val segments = 72
-        for (i in 0 until segments) {
-            val angle = (i.toFloat() / segments) * 2f * PI.toFloat()
-            val m1 = sin(angle * 3f + adjustedPhase) * morphAmp
-            val m2 = sin(angle * 5f - adjustedPhase * 0.7f) * morphAmp * 0.6f
-            val radius = r * (0.82f + m1 + m2)
-            val x = cx + radius * cos(angle)
-            val y = cy + radius * sin(angle)
-            if (i == 0) path.moveTo(x, y)
-            else path.lineTo(x, y)
-        }
-        path.close()
-
-        val needColor = Color(0xFF2ECC71)
-        val wantColor = Color(0xFFE74C3C)
-        val orbR = needColor.red * (1f - blendRatio) + wantColor.red * blendRatio
-        val orbG = needColor.green * (1f - blendRatio) + wantColor.green * blendRatio
-        val orbB = needColor.blue * (1f - blendRatio) + wantColor.blue * blendRatio
-        val orbColor = Color(orbR, orbG, orbB)
-
-        drawPath(
-            path,
-            Brush.radialGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.2f),
-                    orbColor.copy(alpha = 0.9f)
-                ),
-                center = Offset(cx - r * 0.25f, cy - r * 0.25f),
-                radius = r
-            )
-        )
-
-        drawCircle(
-            color = orbColor.copy(alpha = 0.15f * breathAlpha),
-            radius = r * 1.15f,
-            style = Stroke(width = 2.dp.toPx())
-        )
-        drawCircle(
-            color = orbColor.copy(alpha = 0.08f * breathAlpha),
-            radius = r * 1.25f,
-            style = Stroke(width = 3.dp.toPx())
         )
     }
 }
@@ -680,13 +685,8 @@ private fun WeeklyTimelineSection(
     val todayLabel = remember { LocalDate.now().dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() } }
     var expanded by remember { mutableStateOf(false) }
 
-    val lineTransition = rememberInfiniteTransition(label = "line")
-    val lineProgress by lineTransition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "line"
-    )
+    val linePhase = rememberContinuousPhase(1.1f)
+    val lineProgress = 0.6f + 0.4f * sin(linePhase * 2f * PI.toFloat())
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -704,8 +704,8 @@ private fun WeeklyTimelineSection(
                 .clickable { expanded = !expanded }
                 .animateContentSize(
                     animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
                     )
                 )
                 .padding(horizontal = 20.dp, vertical = 20.dp)
@@ -805,8 +805,10 @@ private fun WeeklyTimelineSection(
                 }
                 AnimatedVisibility(
                     visible = expanded,
-                    enter = fadeIn(tween(250)) + expandVertically(tween(250)),
-                    exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
+                    enter = fadeIn(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) +
+                        expandVertically(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)),
+                    exit = fadeOut(animationSpec = tween(150)) +
+                        shrinkVertically(animationSpec = tween(150))
                 ) {
                     Column {
                         Spacer(Modifier.height(18.dp))

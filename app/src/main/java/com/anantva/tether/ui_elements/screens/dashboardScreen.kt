@@ -1,8 +1,12 @@
 package com.anantva.tether.ui_elements.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
@@ -10,11 +14,16 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,6 +55,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -70,11 +81,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.anantva.tether.BuildConfig
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.model.AvatarCatalog
 import com.anantva.tether.data.repository.UserData
 import com.anantva.tether.ui_elements.components.AvatarIcon
 import com.anantva.tether.ui_elements.components.AvatarPickerGrid
+import com.anantva.tether.ui_elements.components.FinancialAuraAvatar
 import com.anantva.tether.ui_elements.components.TetherBottomNavBar
 import com.anantva.tether.ui.theme.VintageCream
 import kotlinx.coroutines.coroutineScope
@@ -204,6 +217,8 @@ private fun tierName(tier: TierPalette): String = when (tier) {
     TierPalette.RED -> "VII"
 }
 
+private fun tierGlowColor(streak: Int): Color = tierAt(streak).light1
+
 private fun tierProgress(streak: Int): Float {
     val (start, end) = when (tierAt(streak)) {
         TierPalette.BRONZE -> 0 to 7
@@ -320,7 +335,10 @@ fun DashboardScreen(
     }
 
     if (showProfile) {
-        ProfileSheet(onDismiss = { showProfile = false })
+        ProfileSheet(
+            onDismiss = { showProfile = false },
+            personality = insightsState?.spendingPersonality ?: "Forming"
+        )
     }
     Scaffold(
         containerColor = DarkBg,
@@ -361,7 +379,8 @@ fun DashboardScreen(
                     userAvatarId = userAvatarId,
                     insightsState = insightsState,
                     onNavigateToInsights = { selectedDestination = TetherNav.Insights },
-                    onNavigateToVault = { selectedDestination = TetherNav.Vault }
+                    onNavigateToVault = { selectedDestination = TetherNav.Vault },
+                    onDebugSetStreak = if (BuildConfig.DEBUG) { value -> viewModel.debugSetStreak(value) } else null
                 )
                 is TetherNav.Insights -> InsightsScreen(
                     innerPadding = innerPadding,
@@ -369,7 +388,8 @@ fun DashboardScreen(
                     spendTrendValues = spendTrendValues,
                     trendLabels = trendLabels,
                     uiState = uiState,
-                    onRefresh = { insightsViewModel.refresh() }
+                    onRefresh = { insightsViewModel.refresh() },
+                    avatarId = userAvatarId
                 )
                 is TetherNav.Settings -> SettingsScreen(innerPadding = innerPadding)
                 is TetherNav.Vault    -> VaultScreen(innerPadding = innerPadding)
@@ -395,7 +415,8 @@ fun HomeContent(
     userAvatarId: String = "chill_cat",
     insightsState: com.anantva.tether.ui_elements.screens.InsightsUiState? = null,
     onNavigateToInsights: () -> Unit = {},
-    onNavigateToVault: () -> Unit = {}
+    onNavigateToVault: () -> Unit = {},
+    onDebugSetStreak: ((Int) -> Unit)? = null
 ) {
     LazyColumn(
         modifier = Modifier
@@ -405,16 +426,19 @@ fun HomeContent(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         item {
+            val usagePercent = if (uiState.dailyLimit > 0)
+                    uiState.dailySpent.toFloat() / uiState.dailyLimit else 0f
             DashboardTopBar(
                 onOpenProfile = onOpenProfile,
                 userName = userName,
-                userAvatarId = userAvatarId
+                userAvatarId = userAvatarId,
+                usagePercent = usagePercent
             )
         }
 
         item { Spacer(Modifier.height(16.dp)) }
 
-        item { BalloonSection(uiState = uiState, insightsState = insightsState) }
+        item { BalloonSection(uiState = uiState, insightsState = insightsState, onDebugSetStreak = onDebugSetStreak) }
 
         item { Spacer(Modifier.height(20.dp)) }
 
@@ -443,72 +467,11 @@ fun formatCurrency(amount: Double): String {
 }
 
 @Composable
-fun MilestoneOverlay(milestoneDays: Int, onDone: () -> Unit) {
-    var visible by remember { mutableStateOf(true) }
-    val scale = remember { Animatable(0f) }
-    val alpha = remember { Animatable(0f) }
-
-    LaunchedEffect(milestoneDays) {
-        scale.animateTo(1.2f, tween(300))
-        scale.animateTo(1f, tween(200))
-        alpha.animateTo(1f, tween(400))
-        delay(2500)
-        alpha.animateTo(0f, tween(600))
-        visible = false
-        onDone()
-    }
-
-    if (visible) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f * alpha.value))
-                .clickable(enabled = false) {},
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.scale(scale.value).alpha(alpha.value)
-            ) {
-                Text(
-                    text = "🔥",
-                    fontSize = 48.sp
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "$milestoneDays-Day Streak!",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = when (milestoneDays) {
-                        3 -> Color(0xFFCD7F32)   // Bronze
-                        7 -> Color(0xFFC0C0C0)   // Silver
-                        14 -> Color(0xFFFFD700)  // Gold
-                        else -> Color(0xFFE5E4E2) // Platinum
-                    }
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = when (milestoneDays) {
-                        3 -> "You're getting the hang of this."
-                        7 -> "A full week. Momentum is real."
-                        14 -> "Two weeks strong. Discipline = identity."
-                        else -> "A month of control. You're elite."
-                    },
-                    fontSize = 14.sp,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 32.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun DashboardTopBar(
     onOpenProfile: () -> Unit,
     userName: String = "there",
-    userAvatarId: String = "chill_cat"
+    userAvatarId: String = "chill_cat",
+    usagePercent: Float = 0f
 ) {
     Row(
         modifier = Modifier
@@ -531,9 +494,10 @@ private fun DashboardTopBar(
             )
         }
 
-        AvatarIcon(
+        FinancialAuraAvatar(
             avatarId = userAvatarId,
             size = 42.dp,
+            usagePercent = usagePercent,
             modifier = Modifier.clickable(onClick = onOpenProfile)
         )
     }
@@ -589,8 +553,13 @@ private fun CoreStatsRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BalloonSection(uiState: DashboardUiState, insightsState: InsightsUiState? = null) {
+fun BalloonSection(
+    uiState: DashboardUiState,
+    insightsState: InsightsUiState? = null,
+    onDebugSetStreak: ((Int) -> Unit)? = null
+) {
     var balloonState by remember {
         mutableStateOf(if (uiState.streakDays == 0) BalloonState.POPPED else BalloonState.NORMAL)
     }
@@ -598,14 +567,17 @@ fun BalloonSection(uiState: DashboardUiState, insightsState: InsightsUiState? = 
     val burstAlpha        = remember { Animatable(1f) }
     val particleProgress  = remember { Animatable(0f) }
     val shakeOffset       = remember { Animatable(0f) }
-    var milestoneTrigger  by remember { mutableStateOf(0) }
+    var showMilestone by remember { mutableStateOf(false) }
+    var milestoneDays by remember { mutableIntStateOf(0) }
+    val milestoneGlow = remember { Animatable(0f) }
 
     LaunchedEffect(uiState.isOverLimit, uiState.streakDays) {
         val shouldShowEmpty = uiState.isOverLimit || uiState.streakDays == 0
 
         when {
             uiState.streakMilestoneReached > 0 -> {
-                milestoneTrigger = uiState.streakMilestoneReached
+                milestoneDays = uiState.streakMilestoneReached
+                showMilestone = true
             }
             shouldShowEmpty && balloonState == BalloonState.NORMAL -> {
                 balloonState = BalloonState.BURSTING
@@ -656,12 +628,23 @@ fun BalloonSection(uiState: DashboardUiState, insightsState: InsightsUiState? = 
         }
     }
 
+    LaunchedEffect(showMilestone) {
+        if (showMilestone) {
+            milestoneGlow.snapTo(0f)
+            milestoneGlow.animateTo(1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium))
+            delay(3400)
+            milestoneGlow.animateTo(0f, tween(600))
+            showMilestone = false
+        }
+    }
+
     val streakPct     = (uiState.streakDays.toFloat() / STREAK_CAP).coerceIn(0f, 1f)
     val balloonSizeDp = 100f + tierAt(uiState.streakDays).ordinal * 10f
     val countFontSize = (44f + 16f * streakPct).sp
     val labelFontSize = (8f + 2f * streakPct).sp
     val feedbackMessage = insightsState?.dailyInsightMessage?.takeIf { it.isNotBlank() } ?: run {
         when {
+            uiState.streakDays == 0 && uiState.isOverLimit -> "The streak slipped today."
             uiState.dailySpent == 0 && uiState.streakDays > 0 -> "Quiet day. Your streak appreciates it."
             uiState.dailySpent == 0 -> "No unnecessary hits today. Nice."
             uiState.isOverLimit && uiState.streakDays > 7 -> "A messy day, not a broken run."
@@ -670,26 +653,16 @@ fun BalloonSection(uiState: DashboardUiState, insightsState: InsightsUiState? = 
         }
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "float")
-    val floatOffset by infiniteTransition.animateFloat(
-        initialValue  = -12f,
-        targetValue   = 12f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(2500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "float_offset"
-    )
-
-    val webAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.08f,
-        targetValue = 0.22f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "web_alpha"
-    )
+    val isBrokenStreak = uiState.streakDays == 0 && uiState.isOverLimit
+    val floatPhase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(16)
+            floatPhase.floatValue += 0.016f
+        }
+    }
+    val floatOffset = 12f * sin(floatPhase.floatValue * 2.513f) * (if (isBrokenStreak) 0.5f else 1f)
+    val webAlpha = 0.15f + 0.07f * sin(floatPhase.floatValue * 3.491f) * if (isBrokenStreak) 0.6f else 1f
 
     val burstParticles = remember {
         List(12) { i ->
@@ -707,18 +680,85 @@ fun BalloonSection(uiState: DashboardUiState, insightsState: InsightsUiState? = 
         }
     }
 
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        OrbView(
+            balloonState = balloonState,
+            shakeOffset = shakeOffset.value,
+            webAlpha = webAlpha,
+            uiState = uiState,
+            balloonSizeDp = balloonSizeDp,
+            countFontSize = countFontSize,
+            labelFontSize = labelFontSize,
+            floatOffset = floatOffset,
+            burstScale = burstScale.value,
+            burstAlpha = burstAlpha.value,
+            particleProgress = particleProgress.value,
+            burstParticles = burstParticles,
+            milestoneGlow = milestoneGlow.value,
+            streakDays = uiState.streakDays
+        )
+
+        OrbMilestoneText(
+            showMilestone = showMilestone,
+            milestoneDays = milestoneDays
+        )
+
+        Spacer(Modifier.height(14.dp))
+
+        Text(
+            text = feedbackMessage,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (uiState.isOverLimit) TetherRed else GrimeGrey,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        )
+
+        if (BuildConfig.DEBUG) {
+            OrbDebugControls(
+                onDelta = { delta -> onDebugSetStreak?.invoke(uiState.streakDays + delta) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun OrbView(
+    balloonState: BalloonState,
+    shakeOffset: Float,
+    webAlpha: Float,
+    uiState: DashboardUiState,
+    balloonSizeDp: Float,
+    countFontSize: androidx.compose.ui.unit.TextUnit,
+    labelFontSize: androidx.compose.ui.unit.TextUnit,
+    floatOffset: Float,
+    burstScale: Float,
+    burstAlpha: Float,
+    particleProgress: Float,
+    burstParticles: List<BurstParticle>,
+    milestoneGlow: Float,
+    streakDays: Int
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp),
-        contentAlignment = Alignment.TopCenter
+            .height(180.dp),
+        contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-                .align(Alignment.TopCenter)
-                .offset(x = shakeOffset.value.dp),
+                .fillMaxSize()
+                .offset(x = shakeOffset.dp),
             contentAlignment = Alignment.Center
         ) {
             Crossfade(
@@ -740,22 +780,21 @@ fun BalloonSection(uiState: DashboardUiState, insightsState: InsightsUiState? = 
                     countFontSize = countFontSize,
                     labelFontSize = labelFontSize,
                     floatOffset = if (balloonState == BalloonState.NORMAL) floatOffset else 0f,
-                    scale = if (balloonState == BalloonState.BURSTING) burstScale.value else 1f,
-                    alpha = if (balloonState == BalloonState.BURSTING) burstAlpha.value else 1f
+                    scale = if (balloonState == BalloonState.BURSTING) burstScale else 1f,
+                    alpha = if (balloonState == BalloonState.BURSTING) burstAlpha else 1f
                 )
             }
 
             if (balloonState == BalloonState.BURSTING) {
-                val progress = particleProgress.value
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     burstParticles.forEach { particle ->
-                        val distance = particle.maxDistanceDp.dp.toPx() * progress
-                        val px       = center.x + cos(particle.angle) * distance
-                        val py       = center.y + sin(particle.angle) * distance
-                        val pAlpha   = (1f - progress).coerceAtLeast(0f)
-                        val pRadius  = (particle.radiusDp.dp.toPx() * (1f - progress * 0.4f)).coerceAtLeast(1f)
+                        val distance = particle.maxDistanceDp.dp.toPx() * particleProgress
+                        val px = center.x + cos(particle.angle) * distance
+                        val py = center.y + sin(particle.angle) * distance
+                        val pAlpha = (1f - particleProgress).coerceAtLeast(0f)
+                        val pRadius = (particle.radiusDp.dp.toPx() * (1f - particleProgress * 0.4f)).coerceAtLeast(1f)
                         drawCircle(
-                            color  = particle.color.copy(alpha = pAlpha),
+                            color = particle.color.copy(alpha = pAlpha),
                             radius = pRadius,
                             center = Offset(px, py)
                         )
@@ -764,18 +803,113 @@ fun BalloonSection(uiState: DashboardUiState, insightsState: InsightsUiState? = 
             }
         }
 
-        if (milestoneTrigger > 0) {
-            MilestoneOverlay(milestoneDays = milestoneTrigger) { milestoneTrigger = 0 }
-        }
-
-        Text(
-            feedbackMessage,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (uiState.isOverLimit) TetherRed else GrimeGrey,
-            textAlign = TextAlign.Center
+        OrbMilestoneGlow(
+            glowValue = milestoneGlow,
+            streakDays = streakDays
         )
+    }
+}
+
+@Composable
+private fun OrbMilestoneGlow(glowValue: Float, streakDays: Int) {
+    if (glowValue > 0.01f) {
+        val glowColor = tierGlowColor(streakDays.coerceAtLeast(1))
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val r = size.minDimension * 0.7f
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        glowColor.copy(alpha = 0.3f * glowValue),
+                        glowColor.copy(alpha = 0.05f * glowValue),
+                        Color.Transparent
+                    ),
+                    center = center,
+                    radius = r
+                ),
+                radius = r,
+                center = center
+            )
+        }
+    }
+}
+
+@Composable
+private fun OrbMilestoneText(showMilestone: Boolean, milestoneDays: Int) {
+    AnimatedVisibility(
+        visible = showMilestone,
+        enter = fadeIn(animationSpec = tween(350)) +
+            scaleIn(initialScale = 0.9f, animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)),
+        exit = fadeOut(animationSpec = tween(500))
+    ) {
+        Column(
+            modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "$milestoneDays-Day Streak!",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = when (milestoneDays) {
+                    3 -> Color(0xFFCD7F32)
+                    7 -> Color(0xFFC0C0C0)
+                    14 -> Color(0xFFFFD700)
+                    else -> Color(0xFFE5E4E2)
+                }
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = when (milestoneDays) {
+                    3 -> "You're getting the hang of this."
+                    7 -> "A full week. Momentum is real."
+                    14 -> "Two weeks strong. Discipline = identity."
+                    else -> "A month of control. You're elite."
+                },
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun OrbDebugControls(onDelta: (Int) -> Unit) {
+    Spacer(Modifier.height(12.dp))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(Color(0x33000000))
+                .border(0.5.dp, Color(0x22FFFFFF), CircleShape)
+                .combinedClickable(
+                    onClick = { onDelta(-1) },
+                    onLongClick = { onDelta(-10) }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("\u2212", color = Color.White.copy(alpha = 0.5f), fontSize = 16.sp, fontWeight = FontWeight.Light)
+        }
+        Text("debug", fontSize = 9.sp, color = Color.White.copy(alpha = 0.2f), fontWeight = FontWeight.Light)
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(Color(0x33000000))
+                .border(0.5.dp, Color(0x22FFFFFF), CircleShape)
+                .combinedClickable(
+                    onClick = { onDelta(1) },
+                    onLongClick = { onDelta(10) }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("+", color = Color.White.copy(alpha = 0.5f), fontSize = 16.sp, fontWeight = FontWeight.Light)
+        }
     }
 }
 
@@ -1039,16 +1173,15 @@ private fun EmptyStreakState(webAlpha: Float) {
 
 @Composable
 fun SpiderWeb(modifier: Modifier = Modifier, alpha: Float, index: Int) {
-    val infiniteTransition = rememberInfiniteTransition(label = "web_$index")
-    val drift by infiniteTransition.animateFloat(
-        initialValue = -1.4f,
-        targetValue = 1.4f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1900 + index * 320, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "web_drift_$index"
-    )
+    val driftPhase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(16)
+            driftPhase.floatValue += 0.016f
+        }
+    }
+    val period = 1900 + index * 320
+    val drift = 1.4f * sin(driftPhase.floatValue * (2000f / period))
 
     Canvas(modifier = modifier.offset(x = drift.dp, y = (-drift * 0.6f).dp).alpha(alpha.coerceIn(0f, 0.24f))) {
         val webColor = Color(0xFF6F6F6F)

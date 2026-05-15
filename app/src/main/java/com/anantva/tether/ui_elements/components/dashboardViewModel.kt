@@ -216,4 +216,11 @@ class DashboardViewModel @Inject constructor(
             preferencesRepository.updateStreakAndCheckDate(newStreak, todayEpochDay)
         }
     }
+
+    // DEBUG ONLY — REMOVE BEFORE RELEASE
+    fun debugSetStreak(streak: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setStreakDays(streak.coerceAtLeast(0))
+        }
+    }
 }

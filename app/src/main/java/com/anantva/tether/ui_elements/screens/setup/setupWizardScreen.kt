@@ -744,7 +744,7 @@ fun StepMonthlyCommitment(
 
 // Helper extension
 fun Int.formatWithCommas(): String =
-    String.format("%,d", this)
+    String.format(java.util.Locale.US, "%,d", this)
 @Composable
 fun SpecialPermissionCard(
     icon: ImageVector,

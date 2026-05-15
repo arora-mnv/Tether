@@ -14,3 +14,7 @@
 .cxx
 local.properties
 .aider*
+
+# Crash dumps and temp files
+crash*.txt
+*.hprof
