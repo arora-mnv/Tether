@@ -2,6 +2,7 @@ package com.anantva.tether
 
 import android.app.Application
 import com.anantva.tether.data.repository.SyncOrchestrator
+import com.anantva.tether.data.repository.UserRepository
 import com.anantva.tether.lifecycle.AppForegroundTracker
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -11,10 +12,12 @@ class TetherApplication : Application() {
 
     @Inject lateinit var appForegroundTracker: AppForegroundTracker
     @Inject lateinit var syncOrchestrator: SyncOrchestrator
+    @Inject lateinit var userRepository: UserRepository
 
     override fun onCreate() {
         super.onCreate()
         appForegroundTracker.start()
         syncOrchestrator.start()
+        userRepository.loadCurrentUser()
     }
 }

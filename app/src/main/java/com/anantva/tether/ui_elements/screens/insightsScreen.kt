@@ -53,8 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anantva.tether.ui.theme.TetherRed
-import com.anantva.tether.ui_elements.components.AvatarIcon
-import com.anantva.tether.ui_elements.components.FinancialAuraAvatar
+import com.anantva.tether.ui_elements.components.TetherOrb
 import com.anantva.tether.ui.theme.VintageCream
 import java.time.LocalDate
 import kotlin.math.sin
@@ -242,8 +241,7 @@ fun InsightsScreen(
     spendTrendValues: List<Int>,
     trendLabels: List<String>,
     uiState: DashboardUiState,
-    onRefresh: () -> Unit = {},
-    avatarId: String = "pulse"
+    onRefresh: () -> Unit = {}
 ) {
     if (insightsState.isLoading) {
         Box(
@@ -278,7 +276,6 @@ fun InsightsScreen(
             item { SpendingPersonalityCard(
                 insightsState = insightsState,
                 streakDays = uiState.streakDays,
-                avatarId = avatarId,
                 usagePercent = usagePercent
             ) }
 
@@ -527,7 +524,6 @@ private fun moodText(mood: String): String = when (mood) {
 private fun SpendingPersonalityCard(
     insightsState: InsightsUiState,
     streakDays: Int = 0,
-    avatarId: String = "pulse",
     usagePercent: Float = 0f
 ) {
     val wantsTotal = (insightsState.dailyWantSpend + insightsState.dailyNeedSpend).coerceAtLeast(1)
@@ -558,10 +554,11 @@ private fun SpendingPersonalityCard(
     ) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                FinancialAuraAvatar(
-                    avatarId = avatarId,
+                TetherOrb(
+                    stressLevel = usagePercent.coerceIn(0f, 1f),
+                    streakDays = streakDays,
                     size = 80.dp,
-                    usagePercent = usagePercent
+                    showText = false
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {

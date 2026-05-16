@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -63,6 +64,7 @@ fun VaultScreen(
     viewModel: VaultViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val txnPagingItems = viewModel.pagedTransactions.collectAsLazyPagingItems()
 
     val context = LocalContext.current
     LaunchedEffect(viewModel) {
@@ -171,16 +173,20 @@ fun VaultScreen(
             return@Column
         }
 
+        val itemCount = txnPagingItems.itemCount
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 90.dp)
         ) {
-            items(uiState.transactions, key = { it.transactionId }) { txn ->
-                TransactionRow(
-                    transaction = txn,
-                    onClick = { editing = txn }
-                )
+            items(count = itemCount) { index ->
+                val txn = txnPagingItems[index]
+                txn?.let {
+                    TransactionRow(
+                        transaction = it,
+                        onClick = { editing = it }
+                    )
+                }
             }
         }
     }

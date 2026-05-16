@@ -29,9 +29,9 @@ class UserPreferencesRepository @Inject constructor(
         val USER_NAME              = stringPreferencesKey("user_name")
         val USER_EMAIL             = stringPreferencesKey("user_email")
         val USER_PHONE             = stringPreferencesKey("user_phone")
-        val SELECTED_AVATAR        = stringPreferencesKey("selected_avatar")
         val STREAK_DAYS            = intPreferencesKey("streak_days")
         val LAST_STREAK_CHECK      = longPreferencesKey("last_streak_check_date")
+        val LAST_STREAK_UPDATE     = stringPreferencesKey("last_streak_update_date")
     }
 
     val hasCompletedOnboarding: Flow<Boolean> =
@@ -68,14 +68,14 @@ class UserPreferencesRepository @Inject constructor(
     val userPhone: Flow<String> =
         dataStore.data.map { it[PreferencesKeys.USER_PHONE] ?: "" }
 
-    val selectedAvatar: Flow<String> =
-        dataStore.data.map { it[PreferencesKeys.SELECTED_AVATAR] ?: com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId }
-
     val streakDays: Flow<Int> =
         dataStore.data.map { it[PreferencesKeys.STREAK_DAYS] ?: 0 }
 
     val lastStreakCheckDate: Flow<Long> =
         dataStore.data.map { it[PreferencesKeys.LAST_STREAK_CHECK] ?: 0L }
+
+    val lastStreakUpdateDate: Flow<String> =
+        dataStore.data.map { it[PreferencesKeys.LAST_STREAK_UPDATE] ?: "" }
 
     suspend fun saveSetupDetails(
         balance:           String,
@@ -103,10 +103,13 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
-    suspend fun updateStreakAndCheckDate(newStreak: Int, epochDay: Long) {
+    suspend fun updateStreakAndCheckDate(newStreak: Int, epochDay: Long, lastUpdateDate: String = "") {
         dataStore.edit { prefs ->
             prefs[PreferencesKeys.STREAK_DAYS]       = newStreak
             prefs[PreferencesKeys.LAST_STREAK_CHECK] = epochDay
+            if (lastUpdateDate.isNotBlank()) {
+                prefs[PreferencesKeys.LAST_STREAK_UPDATE] = lastUpdateDate
+            }
         }
     }
 
@@ -148,12 +151,6 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
-    suspend fun setSelectedAvatar(avatarId: String) {
-        dataStore.edit { prefs ->
-            prefs[PreferencesKeys.SELECTED_AVATAR] = avatarId
-        }
-    }
-
     suspend fun setHasCompletedOnboarding(value: Boolean) {
         dataStore.edit { prefs ->
             prefs[PreferencesKeys.HAS_COMPLETED_ONBOARDING] = value
@@ -181,7 +178,6 @@ class UserPreferencesRepository @Inject constructor(
             prefs[PreferencesKeys.USER_NAME]?.let { put("userName", it) }
             prefs[PreferencesKeys.USER_EMAIL]?.let { put("userEmail", it) }
             prefs[PreferencesKeys.USER_PHONE]?.let { put("userPhone", it) }
-            prefs[PreferencesKeys.SELECTED_AVATAR]?.let { put("selectedAvatar", it) }
             prefs[PreferencesKeys.STREAK_DAYS]?.let { put("streakDays", it) }
             prefs[PreferencesKeys.LAST_STREAK_CHECK]?.let { put("lastStreakCheckDate", it) }
         }
@@ -201,7 +197,6 @@ class UserPreferencesRepository @Inject constructor(
             (map["userName"] as? String)?.let { prefs[PreferencesKeys.USER_NAME] = it }
             (map["userEmail"] as? String)?.let { prefs[PreferencesKeys.USER_EMAIL] = it }
             (map["userPhone"] as? String)?.let { prefs[PreferencesKeys.USER_PHONE] = it }
-            (map["selectedAvatar"] as? String)?.let { prefs[PreferencesKeys.SELECTED_AVATAR] = it }
             (map["streakDays"] as? Int)?.let { prefs[PreferencesKeys.STREAK_DAYS] = it }
             (map["lastStreakCheckDate"] as? Long)?.let { prefs[PreferencesKeys.LAST_STREAK_CHECK] = it }
         }

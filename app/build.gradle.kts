@@ -92,8 +92,15 @@ dependencies {
     // Google Sign-In
     implementation(libs.play.services.auth)
 
+    // ML Kit Text Recognition
+    implementation(libs.mlkit.text.recognition)
+
     // Coroutines + Play Services (for Task.await())
     implementation(libs.kotlinx.coroutines.play.services)
+
+    // Paging
+    implementation(libs.androidx.paging.runtime)
+    implementation(libs.androidx.paging.compose)
 
     // Testing
     testImplementation(libs.junit)

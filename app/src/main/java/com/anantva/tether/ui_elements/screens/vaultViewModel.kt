@@ -3,10 +3,13 @@ package com.anantva.tether.ui_elements.screens
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.repository.TetherRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +39,9 @@ class VaultViewModel @Inject constructor(
 
     private val filter = MutableStateFlow(TransactionFilter.ALL)
     private val sort = MutableStateFlow(TransactionSort.DATE_DESC)
+
+    val pagedTransactions: Flow<PagingData<TransactionEntity>> =
+        tetherRepository.getTransactionsPaged().cachedIn(viewModelScope)
 
     val uiState: StateFlow<VaultUiState> =
         combine(

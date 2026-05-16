@@ -6,12 +6,16 @@ import com.anantva.tether.data.local.UserPreferencesRepository
 import com.anantva.tether.data.local.dao.CategoryCorrectionDao
 import com.anantva.tether.data.local.dao.GoalDao
 import com.anantva.tether.data.local.dao.TransactionDao
+import com.anantva.tether.data.local.dao.TransactionPagingSource
 import com.anantva.tether.data.local.dao.UserProfileDao
 import com.anantva.tether.data.local.entity.GoalEntity
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.local.entity.UserProfileEntity
 import com.anantva.tether.data.local.dao.CategorySpend
 import com.anantva.tether.data.local.entity.SpendingCategories
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import com.anantva.tether.data.parser.CategoryEngine
 import com.anantva.tether.data.parser.MerchantLearningEngine
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -274,6 +278,11 @@ class TetherRepository(
 
     fun getAllTransactions(): Flow<List<TransactionEntity>> =
         transactionDataSource.getAllTransactions()
+
+    fun getTransactionsPaged(): Flow<PagingData<TransactionEntity>> = Pager(
+        config = PagingConfig(pageSize = 30, prefetchDistance = 10, enablePlaceholders = false),
+        pagingSourceFactory = { TransactionPagingSource(transactionDao) }
+    ).flow
 
     suspend fun getAllConfirmedTransactions(): List<TransactionEntity> =
         transactionDataSource.getAllConfirmedTransactions()

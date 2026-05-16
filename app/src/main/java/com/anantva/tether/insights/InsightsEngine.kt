@@ -225,28 +225,49 @@ class InsightsEngine @Inject constructor(
         isOverLimit: Boolean
     ): String {
         return when {
-            isOverLimit && discretionarySpend > 0 -> listOf(
-                "Bro... again?", 
-                "Impulse won today.", 
-                "That late-night swipe counted.", 
-                "Tomorrow is the comeback.",
-                "Tiny spends stack fast.",
-                "That swipe was unnecessary."
+            isOverLimit -> listOf(
+                "The momentum collapsed.",
+                "Today broke the rhythm.",
+                "Everything went quiet."
             ).random()
-            isOverLimit -> "Wallet took a hit, but at least it was for needs."
-            totalSpend == 0 -> listOf("Wallet survived another day.", "Disciplined.", "Zero damage today.", "No unnecessary hits today. Nice.").random()
+            totalSpend == 0 -> listOf(
+                "Momentum feels stable.",
+                "The rhythm is holding.",
+                "Today stayed under control."
+            ).random()
             dayTransactions.isNotEmpty() && dayTransactions.all { txn ->
                 SpendingCategories.streakPenaltyWeight(txn.category, txn.merchant, txn.txnCategory) == 0.0
-            } -> "Only the fixed stuff showed up today."
-            previousWeekAverage > 0 && totalSpend < (previousWeekAverage * 0.6f) -> "Momentum building."
-            wantSpend == 0 && discretionarySpend == 0 -> "You're spending with intention."
-            topCategory == SpendingCategories.FOOD && discretionarySpend > 0 -> "Food delivery got you again."
-            topCategory == SpendingCategories.SHOPPING -> "Shopping got the loudest vote today."
-            topCategory == SpendingCategories.ENTERTAINMENT -> "Entertainment tried to steal the scene today."
-            normalTxnCount >= 5 -> "$normalTxnCount taps today. A quieter card tomorrow helps."
-            healthScore >= 0.8f || needWantRatio >= 3f -> "Clean day. You spent with intent."
-            discretionarySpend > totalSpend * 0.6f -> "Most of today’s damage was optional."
-            else -> listOf("Quiet day.", "No major movement yet.", "Steady day.").random()
+            } -> listOf(
+                "Today stayed under control.",
+                "The rhythm is holding."
+            ).random()
+            previousWeekAverage > 0 && totalSpend < (previousWeekAverage * 0.6f) -> listOf(
+                "Momentum feels stable.",
+                "The rhythm is holding."
+            ).random()
+            healthScore >= 0.8f || needWantRatio >= 3f -> listOf(
+                "Momentum feels stable.",
+                "The rhythm is holding.",
+                "Today stayed under control."
+            ).random()
+            discretionarySpend > totalSpend * 0.6f -> listOf(
+                "Impulse is taking over.",
+                "The pace is getting dangerous.",
+                "The buffer is disappearing."
+            ).random()
+            normalTxnCount >= 5 -> listOf(
+                "The pace is getting dangerous.",
+                "The buffer is disappearing."
+            ).random()
+            wantSpend > 0 && needWantRatio < 1f -> listOf(
+                "Impulse is taking over.",
+                "The pace is getting dangerous."
+            ).random()
+            else -> listOf(
+                "Momentum feels stable.",
+                "The rhythm is holding.",
+                "Today stayed under control."
+            ).random()
         }
     }
 

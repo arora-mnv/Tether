@@ -14,6 +14,8 @@ datastorePreferences = "1.1.1"
 firebaseBom = "33.5.1"
 playServicesAuth = "20.7.0"
 coroutinesPlayServices = "1.8.1"
+paging = "3.3.5"
+mlkitTextRecognition = "16.0.1"
 junit = "4.13.2"
 testExtJunit = "1.2.1"
 espressoCore = "3.6.1"
@@ -63,6 +65,14 @@ play-services-auth = { group = "com.google.android.gms", name = "play-services-a
 
 # Coroutines
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
+
+# Testing
+# Paging
+androidx-paging-runtime = { group = "androidx.paging", name = "paging-runtime", version.ref = "paging" }
+androidx-paging-compose = { group = "androidx.paging", name = "paging-compose", version.ref = "paging" }
+
+# ML Kit
+mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }

@@ -9,8 +9,6 @@ import com.anantva.tether.data.parser.CategoryEngine
 import com.anantva.tether.data.parser.MerchantLearningEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.emitAll
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,62 +25,59 @@ class TransactionDataSourceRouter @Inject constructor(
     private val merchantLearningEngine: MerchantLearningEngine
 ) : TransactionDataSource {
 
-    private suspend fun useCloud(): Boolean =
-        preferencesRepository.isCloudStorage.first() && authManager.getCurrentUserId().orEmpty().isNotEmpty()
+    // Always read from local (Room) which is reactive via Room DAO flows.
+    // Room is always up-to-date: all writes go to Room first, and SyncOrchestrator
+    // pulls cloud transactions into Room. Cloud data source is write-only.
+    override fun getDailyNetSpent(startOfDay: Long, endOfDay: Long): Flow<Double?> =
+        local.getDailyNetSpent(startOfDay, endOfDay)
 
-    private suspend fun source(): TransactionDataSource =
-        if (useCloud()) cloud else local
+    override fun observeDailyExpenseSpent(startOfDay: Long, endOfDay: Long): Flow<Int?> =
+        local.observeDailyExpenseSpent(startOfDay, endOfDay)
 
-    override fun getDailyNetSpent(startOfDay: Long, endOfDay: Long): Flow<Double?> = flow {
-        emitAll(source().getDailyNetSpent(startOfDay, endOfDay))
-    }
-
-    override fun observeDailyExpenseSpent(startOfDay: Long, endOfDay: Long): Flow<Int?> = flow {
-        emitAll(source().observeDailyExpenseSpent(startOfDay, endOfDay))
-    }
-
-    override fun getAllTransactions(): Flow<List<TransactionEntity>> = flow {
-        emitAll(source().getAllTransactions())
-    }
+    override fun getAllTransactions(): Flow<List<TransactionEntity>> =
+        local.getAllTransactions()
 
     override suspend fun getExpenseSpentValue(startOfDay: Long, endOfDay: Long): Int =
-        source().getExpenseSpentValue(startOfDay, endOfDay)
+        local.getExpenseSpentValue(startOfDay, endOfDay)
 
     override suspend fun getConfirmedTransactionCount(startOfDay: Long, endOfDay: Long): Int =
-        source().getConfirmedTransactionCount(startOfDay, endOfDay)
+        local.getConfirmedTransactionCount(startOfDay, endOfDay)
 
     override suspend fun getAllConfirmedTransactions(): List<TransactionEntity> =
-        source().getAllConfirmedTransactions()
+        local.getAllConfirmedTransactions()
 
     override suspend fun getTransactionById(id: Long): TransactionEntity? =
-        source().getTransactionById(id)
+        local.getTransactionById(id)
 
     override suspend fun getCategoryBreakdown(startOfDay: Long, endOfDay: Long): List<CategorySpend> =
-        source().getCategoryBreakdown(startOfDay, endOfDay)
+        local.getCategoryBreakdown(startOfDay, endOfDay)
 
     override suspend fun getNormalExpenseSpentValue(startOfDay: Long, endOfDay: Long): Int =
-        source().getNormalExpenseSpentValue(startOfDay, endOfDay)
+        local.getNormalExpenseSpentValue(startOfDay, endOfDay)
 
     override suspend fun getDiscretionarySpend(startOfDay: Long, endOfDay: Long): Int =
-        source().getDiscretionarySpend(startOfDay, endOfDay)
+        local.getDiscretionarySpend(startOfDay, endOfDay)
 
     override suspend fun getWantSpend(startOfDay: Long, endOfDay: Long): Int =
-        source().getWantSpend(startOfDay, endOfDay)
+        local.getWantSpend(startOfDay, endOfDay)
 
     override suspend fun getNeedSpend(startOfDay: Long, endOfDay: Long): Int =
-        source().getNeedSpend(startOfDay, endOfDay)
+        local.getNeedSpend(startOfDay, endOfDay)
 
     override suspend fun getStreakRelevantSpent(startOfDay: Long, endOfDay: Long): Int =
-        source().getStreakRelevantSpent(startOfDay, endOfDay)
+        local.getStreakRelevantSpent(startOfDay, endOfDay)
 
     override suspend fun confirmedTransactionsInRange(startOfDay: Long, endOfDay: Long): List<TransactionEntity> =
-        source().confirmedTransactionsInRange(startOfDay, endOfDay)
+        local.confirmedTransactionsInRange(startOfDay, endOfDay)
+
+    private suspend fun shouldSyncToCloud(): Boolean =
+        preferencesRepository.isCloudStorage.first() && authManager.getCurrentUserId().orEmpty().isNotEmpty()
 
     override suspend fun addTransaction(transaction: TransactionEntity): Boolean {
         val enriched = enrichTransaction(transaction)
         if (!local.addTransaction(enriched)) return false
         persistCategoryLearning(enriched)
-        if (useCloud()) {
+        if (shouldSyncToCloud()) {
             try { cloud.addTransaction(enriched) }
             catch (e: Exception) { Log.e(TAG, "Cloud save failed", e) }
         }
@@ -94,7 +89,7 @@ class TransactionDataSourceRouter @Inject constructor(
         if (!local.updateTransactionCategory(transactionId, newCategory)) return false
         val updated = enrichTransaction(txn.copy(category = newCategory))
         persistCategoryLearning(updated)
-        if (useCloud()) cloud.updateTransactionCategory(transactionId, newCategory)
+        if (shouldSyncToCloud()) cloud.updateTransactionCategory(transactionId, newCategory)
         return true
     }
 
@@ -102,13 +97,13 @@ class TransactionDataSourceRouter @Inject constructor(
         val enriched = enrichTransaction(transaction)
         if (!local.updateTransaction(enriched)) return false
         persistCategoryLearning(enriched)
-        if (useCloud()) cloud.updateTransaction(enriched)
+        if (shouldSyncToCloud()) cloud.updateTransaction(enriched)
         return true
     }
 
     override suspend fun deleteTransaction(userId: String, transactionId: Long) {
         local.deleteTransaction(userId, transactionId)
-        if (useCloud()) cloud.deleteTransaction(userId, transactionId)
+        if (shouldSyncToCloud()) cloud.deleteTransaction(userId, transactionId)
     }
 
     private suspend fun enrichTransaction(transaction: TransactionEntity): TransactionEntity {
@@ -132,7 +127,7 @@ class TransactionDataSourceRouter @Inject constructor(
         if (transaction.type != "Expense") return
         merchantLearningEngine.learn(transaction.merchant, transaction.category)
         val corrections = categoryEngine.saveCorrection(transaction.merchant, transaction.category)
-        if (corrections.isEmpty() || !useCloud()) return
+        if (corrections.isEmpty() || !shouldSyncToCloud()) return
         corrections.forEach { correction ->
             firestoreRepository.saveCategoryCorrection(
                 authManager.getCurrentUserId().orEmpty(), correction

@@ -3,14 +3,16 @@ package com.anantva.tether.data.repository
 import android.util.Log
 import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
-import com.anantva.tether.data.model.TetherOrbDefaults
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,11 +24,16 @@ data class UserData(
     val name: String? = null,
     val phone: String? = null,
     val email: String? = null,
-    val avatarId: String = com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId
+    val photoUrl: String? = null
 ) {
     val displayName: String
         get() = name?.takeIf { it.isNotBlank() } ?: "there"
 }
+
+data class UserUiState(
+    val profileImageUrl: String? = null,
+    val streak: Int = 0
+)
 
 @Singleton
 class UserRepository @Inject constructor(
@@ -37,6 +44,21 @@ class UserRepository @Inject constructor(
 
     private val _user = MutableStateFlow(UserData())
     val user: StateFlow<UserData?> = _user.asStateFlow()
+
+    val userUiState: StateFlow<UserUiState> = combine(
+        _user,
+        preferencesRepository.isCloudStorage,
+        preferencesRepository.streakDays
+    ) { user, cloud, streak ->
+        UserUiState(
+            profileImageUrl = if (cloud) user?.photoUrl else null,
+            streak = streak
+        )
+    }.stateIn(
+        scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = UserUiState()
+    )
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -51,15 +73,13 @@ class UserRepository @Inject constructor(
             val localName = preferencesRepository.userName.first()
             val localEmail = preferencesRepository.userEmail.first()
             val localPhone = preferencesRepository.userPhone.first()
-            val localAvatar = preferencesRepository.selectedAvatar.first()
 
             if (uid == null) {
                 Log.d(TAG, "loadCurrentUser: local-only mode, using DataStore identity")
                 _user.value = UserData(
                     name = localName.takeIf { it.isNotBlank() },
                     phone = localPhone.takeIf { it.isNotBlank() },
-                    email = localEmail.takeIf { it.isNotBlank() },
-                    avatarId = localAvatar.takeIf { it.isNotBlank() } ?: TetherOrbDefaults.DefaultAvatarId
+                    email = localEmail.takeIf { it.isNotBlank() }
                 )
                 return@launch
             }
@@ -67,7 +87,7 @@ class UserRepository @Inject constructor(
             var name: String? = null
             var phone: String? = null
             var email: String? = null
-            var avatarId: String = localAvatar.takeIf { it.isNotBlank() } ?: TetherOrbDefaults.DefaultAvatarId
+            val photoUrl = authManager.getCurrentUserPhotoUrl()
 
             // Try Firestore first
             try {
@@ -106,7 +126,7 @@ class UserRepository @Inject constructor(
                 name = name,
                 phone = phone,
                 email = email,
-                avatarId = avatarId
+                photoUrl = photoUrl
             )
             Log.d(TAG, "loadCurrentUser: final state uid=$uid name=$name")
         }
@@ -116,7 +136,7 @@ class UserRepository @Inject constructor(
      * Save user data to both Firestore and DataStore.
      * Updates the StateFlow immediately so UI reflects changes without delay.
      */
-    fun saveUser(name: String? = null, phone: String? = null, email: String? = null, avatarId: String? = null) {
+    fun saveUser(name: String? = null, phone: String? = null, email: String? = null) {
         scope.launch {
             val current = _user.value
             val uid = current.uid.takeIf { it.isNotBlank() } ?: authManager.getCurrentUserId()
@@ -128,14 +148,12 @@ class UserRepository @Inject constructor(
             val newName = name ?: current.name
             val newPhone = phone ?: current.phone
             val newEmail = email ?: current.email
-            val newAvatar = avatarId ?: current.avatarId
 
             _user.value = _user.value.copy(
                 uid = uid,
                 name = newName,
                 phone = newPhone,
-                email = newEmail,
-                avatarId = newAvatar
+                email = newEmail
             )
 
             try {
@@ -148,38 +166,11 @@ class UserRepository @Inject constructor(
                 Log.e(TAG, "saveUser: DataStore update failed: ${e.message}", e)
             }
 
-            if (avatarId != null) {
-                try {
-                    preferencesRepository.setSelectedAvatar(newAvatar)
-                } catch (e: Exception) {
-                    Log.e(TAG, "saveUser: avatar save failed: ${e.message}", e)
-                }
-            }
-
             try {
                 firestoreRepository.saveUserProfile(uid, newName.orEmpty(), newPhone.orEmpty())
                 Log.d(TAG, "saveUser: Firestore save success uid=$uid")
             } catch (e: Exception) {
                 Log.e(TAG, "saveUser: Firestore save failed: ${e.message}", e)
-            }
-        }
-    }
-
-    fun selectAvatar(avatarId: String) {
-        scope.launch {
-            val current = _user.value
-            val uid = current.uid.takeIf { it.isNotBlank() } ?: authManager.getCurrentUserId()
-            if (uid == null) {
-                Log.w(TAG, "selectAvatar: no uid available")
-                return@launch
-            }
-
-            _user.value = current.copy(avatarId = avatarId)
-
-            try {
-                preferencesRepository.setSelectedAvatar(avatarId)
-            } catch (e: Exception) {
-                Log.e(TAG, "selectAvatar: DataStore save failed: ${e.message}", e)
             }
         }
     }

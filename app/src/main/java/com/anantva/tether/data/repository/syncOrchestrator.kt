@@ -2,6 +2,8 @@ package com.anantva.tether.data.repository
 
 import android.util.Log
 import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.local.dao.TransactionDao
+import com.anantva.tether.data.local.entity.TransactionEntity
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,10 +25,12 @@ private const val TAG = "SyncOrchestrator"
 @Singleton
 class SyncOrchestrator @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val transactionDao: TransactionDao
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var syncJob: Job? = null
+    private var listenerJob: Job? = null
 
     private val _syncState = MutableStateFlow<SyncResult>(SyncResult.Idle)
     val syncState: StateFlow<SyncResult> = _syncState.asStateFlow()
@@ -38,7 +42,19 @@ class SyncOrchestrator @Inject constructor(
                 authStateFlow()
             ) { isCloud, uid -> isCloud to uid }.collect { (isCloud, uid) ->
                 syncJob?.cancel()
+                listenerJob?.cancel()
                 if (isCloud && !uid.isNullOrEmpty()) {
+                    listenerJob = scope.launch {
+                        Log.d(TAG, "Starting real-time Firestore listener for uid=$uid")
+                        syncManager.observeTransactionsLive(uid).collect { cloudTxns ->
+                            cloudTxns.forEach { txn ->
+                                val existing = transactionDao.getTransactionById(txn.transactionId)
+                                if (existing == null || txn.date > existing.date) {
+                                    transactionDao.upsertTransaction(txn)
+                                }
+                            }
+                        }
+                    }
                     syncJob = scope.launch {
                         Log.d(TAG, "Starting sync for uid=$uid")
                         try {
@@ -57,6 +73,7 @@ class SyncOrchestrator @Inject constructor(
                         }
                     }
                 } else {
+                    listenerJob?.cancel()
                     _syncState.value = SyncResult.Idle
                 }
             }

@@ -49,6 +49,7 @@ class DashboardViewModel @Inject constructor(
 ) : ViewModel() {
 
     val user = userRepository.user
+    val userUiState = userRepository.userUiState
 
     private val today = LocalDate.now()
     private val zone  = ZoneId.systemDefault()
@@ -61,6 +62,7 @@ class DashboardViewModel @Inject constructor(
 
     init {
         checkAndUpdateStreak()
+        watchOverLimit()
         viewModelScope.launch {
             firestoreRepository.testFirestoreWrite()
         }
@@ -189,31 +191,81 @@ class DashboardViewModel @Inject constructor(
             initialValue = DashboardUiState(isLoading = true)
         )
 
+    /**
+     * Day-transition streak check: runs once per calendar day.
+     * Evaluates YESTERDAY's spending — if within limit, increments streak;
+     * if exceeded, resets to 0.
+     *
+     * Guarded by lastStreakUpdateDate (yyyy-MM-dd): skips entirely if today
+     * has already been processed, regardless of recomposition or relaunch.
+     */
     private fun checkAndUpdateStreak() {
         viewModelScope.launch {
-            val lastCheckEpochDay = preferencesRepository.lastStreakCheckDate.first()
-            val todayEpochDay = today.toEpochDay()
-            if (lastCheckEpochDay >= todayEpochDay) return@launch
+            val todayDate = LocalDate.now()
+            val lastUpdate = preferencesRepository.lastStreakUpdateDate.first()
+            val todayStr = todayDate.toString()
+
+            if (lastUpdate == todayStr) return@launch
+
+            val todayEpochDay = todayDate.toEpochDay()
+            val yesterday = todayDate.minusDays(1)
+            val startOfYesterday = yesterday.atStartOfDay(zone).toInstant().toEpochMilli()
+            val endOfYesterday = startOfYesterday + 24L * 60 * 60 * 1000 - 1
 
             val currentStreak = preferencesRepository.streakDays.first()
             val balance = preferencesRepository.currentBalance.first().toIntOrNull() ?: 0
             val monthlyCommitment = preferencesRepository.monthlyCommitment.first().toIntOrNull() ?: 0
-            val spentToday = tetherRepository.getStreakRelevantSpent(startOfToday, endOfToday)
+            val spentYesterday = tetherRepository.getStreakRelevantSpent(startOfYesterday, endOfYesterday)
 
             val dailyLimitResult = calculateDailyLimit(
                 currentBalance = balance,
                 monthlyCommitment = monthlyCommitment,
-                spentToday = spentToday,
-                currentDate = today
+                spentToday = spentYesterday,
+                currentDate = yesterday
             )
 
-            val newStreak = if (spentToday <= dailyLimitResult.dailyLimit) {
+            val newStreak = if (spentYesterday <= dailyLimitResult.dailyLimit) {
                 currentStreak + 1
             } else {
                 0
             }
 
-            preferencesRepository.updateStreakAndCheckDate(newStreak, todayEpochDay)
+            preferencesRepository.updateStreakAndCheckDate(newStreak, todayEpochDay, todayStr)
+        }
+    }
+
+    /**
+     * Real-time over-limit watcher: breaks streak immediately when today's
+     * spending exceeds the daily limit. Runs independently of day transitions.
+     */
+    private fun watchOverLimit() {
+        viewModelScope.launch {
+            combine(
+                preferencesRepository.streakDays,
+                preferencesRepository.currentBalance,
+                preferencesRepository.monthlyCommitment,
+                tetherRepository.observeDailyExpenseSpent(startOfToday, endOfToday)
+            ) { streakDays, balanceStr, commitmentStr, spentToday ->
+
+                val balance = balanceStr.toIntOrNull() ?: 0
+                val monthlyCommitment = commitmentStr.toIntOrNull() ?: 0
+                val spent = spentToday ?: 0
+
+                val limitResult = calculateDailyLimit(
+                    currentBalance = balance,
+                    monthlyCommitment = monthlyCommitment,
+                    spentToday = spent,
+                    currentDate = today
+                )
+
+                Triple(streakDays, limitResult, balance to spent)
+            }.collect { (streakDays, limitResult, _) ->
+                if (streakDays > 0 && limitResult.exceeded) {
+                    val todayEpochDay = today.toEpochDay()
+                    val todayStr = today.toString()
+                    preferencesRepository.updateStreakAndCheckDate(0, todayEpochDay, todayStr)
+                }
+            }
         }
     }
 

@@ -5,6 +5,7 @@ import com.anantva.tether.data.local.dao.CategoryCorrectionDao
 import com.anantva.tether.data.local.dao.TransactionDao
 import com.anantva.tether.data.local.dao.GoalDao
 import com.anantva.tether.data.local.dao.UserProfileDao
+import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.local.entity.UserProfileEntity
 import com.anantva.tether.data.local.UserPreferencesRepository
 import kotlinx.coroutines.Dispatchers
@@ -226,6 +227,13 @@ class SyncManager @Inject constructor(
 
         Log.d(SYNC_TAG, "Preferences sync complete")
     }
+
+    /**
+     * Real-time Firestore snapshot listener for transactions.
+     * Fires on every Firestore change, enabling immediate Room upsert.
+     */
+    fun observeTransactionsLive(uid: String): Flow<List<TransactionEntity>> =
+        firestoreRepository.observeTransactions(uid)
 
     private suspend fun syncCategoryCorrections(uid: String) {
         val localCorrections = categoryCorrectionDao.getAllCorrections()

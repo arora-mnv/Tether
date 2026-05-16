@@ -19,10 +19,8 @@ data class ProfileUiState(
     val email: String = "",
     val phone: String = "",
     val isCloudStorage: Boolean = false,
-    val avatarId: String = com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId,
     val streakDays: Int = 0,
-    val personality: String = "Forming",
-    val googlePhotoUrl: String? = null
+    val personality: String = "Forming"
 )
 
 @HiltViewModel
@@ -31,6 +29,8 @@ class ProfileViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val authManager: FirebaseAuthManager
 ) : ViewModel() {
+
+    val userUiState = userRepository.userUiState
 
     init {
         viewModelScope.launch {
@@ -45,17 +45,14 @@ class ProfileViewModel @Inject constructor(
             userRepository.user,
             preferencesRepository.userEmail,
             preferencesRepository.isCloudStorage,
-            preferencesRepository.selectedAvatar,
             preferencesRepository.streakDays
-        ) { user, email, cloud, avatar, streak ->
+        ) { user, email, cloud, streak ->
             ProfileUiState(
                 name = user?.name?.takeIf { it.isNotBlank() } ?: "",
                 email = user?.email?.takeIf { it.isNotBlank() } ?: email,
                 phone = user?.phone?.takeIf { it.isNotBlank() } ?: "",
                 isCloudStorage = cloud,
-                avatarId = user?.avatarId?.takeIf { it.isNotBlank() } ?: avatar ?: com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId,
-                streakDays = streak,
-                googlePhotoUrl = if (cloud) authManager.getCurrentUserPhotoUrl() else null
+                streakDays = streak
             )
         }.stateIn(
             scope = viewModelScope,
@@ -66,12 +63,6 @@ class ProfileViewModel @Inject constructor(
     fun save(name: String, email: String, phone: String) {
         viewModelScope.launch {
             userRepository.saveUser(name = name, phone = phone, email = email)
-        }
-    }
-
-    fun selectAvatar(avatarId: String) {
-        viewModelScope.launch {
-            userRepository.selectAvatar(avatarId)
         }
     }
 

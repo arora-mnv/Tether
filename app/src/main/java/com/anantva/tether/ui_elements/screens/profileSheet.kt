@@ -64,12 +64,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.anantva.tether.ui_elements.components.AvatarIcon
-import com.anantva.tether.ui_elements.components.AvatarPickerGrid
-import kotlinx.coroutines.Dispatchers
+import com.anantva.tether.ui_elements.components.TetherAvatar
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import java.net.URL
 import kotlin.math.cos
 import kotlin.math.sin
 import com.anantva.tether.ui.theme.TetherRed
@@ -119,12 +115,12 @@ fun ProfileSheet(
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val userUiState by viewModel.userUiState.collectAsState()
     val statePersonality = if (personality != "Forming") personality else uiState.personality
 
     var name by remember(uiState.name) { mutableStateOf(uiState.name) }
     var email by remember(uiState.email) { mutableStateOf(uiState.email) }
     var phone by remember(uiState.phone) { mutableStateOf(uiState.phone) }
-    var selectedAvatarId by remember(uiState.avatarId) { mutableStateOf(uiState.avatarId) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -202,15 +198,9 @@ fun ProfileSheet(
                         }
                     }
 
-                    val defaultId = com.anantva.tether.data.model.TetherOrbDefaults.DefaultAvatarId
-                    val hasCustomAvatar = selectedAvatarId != defaultId ||
-                        uiState.avatarId != defaultId
-                    val googlePhotoUrl = if (!hasCustomAvatar) uiState.googlePhotoUrl else null
-                    AnimatedAvatar(
-                        avatarId = selectedAvatarId,
-                        personality = statePersonality,
-                        size = 88.dp,
-                        googlePhotoUrl = googlePhotoUrl
+                    TetherAvatar(
+                        imageUrl = userUiState.profileImageUrl,
+                        size = 88.dp
                     )
 
                     Spacer(Modifier.height(14.dp))
@@ -281,21 +271,6 @@ fun ProfileSheet(
 
             Spacer(Modifier.height(12.dp))
 
-            // ── Avatar picker ──
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-            ) {
-                AvatarPickerGrid(
-                    selectedAvatarId = selectedAvatarId,
-                    onAvatarSelected = { id ->
-                        selectedAvatarId = id
-                        viewModel.selectAvatar(id)
-                    }
-                )
-            }
-
             Spacer(Modifier.height(12.dp))
 
             // ── Sync card ──
@@ -340,72 +315,6 @@ fun ProfileSheet(
             }
 
             Spacer(Modifier.height(32.dp))
-        }
-    }
-}
-
-@Composable
-private fun AnimatedAvatar(
-    avatarId: String,
-    personality: String,
-    size: Dp,
-    googlePhotoUrl: String? = null
-) {
-    val glowColor = personalityColor(personality)
-    val transition = rememberInfiniteTransition(label = "avatar_glow")
-    val glowAlpha by transition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.7f,
-        animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "glow"
-    )
-    val glowScale by transition.animateFloat(
-        initialValue = 0.92f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "scale"
-    )
-
-    val photoBitmap = remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(googlePhotoUrl) {
-        if (!googlePhotoUrl.isNullOrBlank()) {
-            withContext(Dispatchers.IO) {
-                try {
-                    val url = URL(googlePhotoUrl)
-                    val connection = url.openConnection()
-                    connection.connectTimeout = 3000
-                    val input = connection.getInputStream()
-                    photoBitmap.value = android.graphics.BitmapFactory.decodeStream(input)
-                    input.close()
-                } catch (_: Exception) { }
-            }
-        }
-    }
-
-    Box(
-        modifier = Modifier.size(size),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(size * glowScale)
-                .clip(CircleShape)
-                .background(glowColor.copy(alpha = 0.12f * glowAlpha))
-        )
-        if (photoBitmap.value != null) {
-            androidx.compose.foundation.Image(
-                bitmap = photoBitmap.value!!.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(size)
-                    .clip(CircleShape)
-            )
-        } else {
-            AvatarIcon(
-                avatarId = avatarId,
-                personality = personality,
-                size = size
-            )
         }
     }
 }
