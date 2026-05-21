@@ -422,6 +422,7 @@ private fun DashboardTopBar(
     userUiState: UserUiState = UserUiState(),
     usagePercent: Float = 0f
 ) {
+    val isLoggedIn = userUiState.isLoggedIn
     val firstName = userUiState.displayName
         .takeIf { it.isNotBlank() && it != "there" }
         ?.trim()
@@ -449,7 +450,7 @@ private fun DashboardTopBar(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (firstName == null) greeting else "$greeting, $firstName",
+                text = if (firstName == null || !isLoggedIn) greeting else "$greeting, $firstName",
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
@@ -462,9 +463,10 @@ private fun DashboardTopBar(
         }
 
         TetherAvatar(
-            userUiState = userUiState.copy(stressLevel = usagePercent.coerceIn(0f, 1f)),
+            userUiState = userUiState,
             size = 42.dp,
-            modifier = Modifier.clickable(onClick = onOpenProfile)
+            isLoggedIn = isLoggedIn,
+            onClick = onOpenProfile
         )
     }
 }

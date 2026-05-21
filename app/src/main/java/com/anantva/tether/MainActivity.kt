@@ -74,13 +74,10 @@ class MainActivity : ComponentActivity() {
                         val gateStartedAt = System.currentTimeMillis()
                         val onboardingCompleted = preferencesRepository.hasCompletedOnboarding.first()
                         val setupCompleted = preferencesRepository.hasCompletedSetup.first()
-                        val isCloudSyncEnabled = preferencesRepository.isCloudStorage.first()
-                        val isLoggedIn = authRepository.isLoggedIn()
 
                         startDestination = when {
                             !onboardingCompleted -> "onboarding"
                             !setupCompleted -> "setup"
-                            isCloudSyncEnabled && !isLoggedIn -> "auth"
                             else -> "dashboard"
                         }
 
@@ -133,19 +130,10 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable("setup") {
-                                val scope = rememberCoroutineScope()
                                 SetupWizardScreen(
                                     onSetupComplete = {
-                                        scope.launch {
-                                            val cloudEnabled = preferencesRepository.isCloudStorage.first()
-                                            val destination = if (cloudEnabled && !authRepository.isLoggedIn()) {
-                                                "auth"
-                                            } else {
-                                                "dashboard"
-                                            }
-                                            navController.navigate(destination) {
-                                                popUpTo("setup") { inclusive = true }
-                                            }
+                                        navController.navigate("dashboard") {
+                                            popUpTo("setup") { inclusive = true }
                                         }
                                     }
                                 )

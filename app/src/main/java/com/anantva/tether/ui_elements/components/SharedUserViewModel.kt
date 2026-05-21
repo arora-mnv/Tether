@@ -3,6 +3,7 @@ package com.anantva.tether.ui_elements.components
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.repository.AuthRepository
 import com.anantva.tether.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,6 +17,7 @@ data class UserUiState(
     val displayName: String = "there",
     val profileImageUrl: String? = null,
     val isCloudSyncEnabled: Boolean = false,
+    val isLoggedIn: Boolean = false,
     val streak: Int = 0,
     val stressLevel: Float = 0f
 )
@@ -23,6 +25,7 @@ data class UserUiState(
 @HiltViewModel
 class SharedUserViewModel @Inject constructor(
     private val userRepository: UserRepository,
+    private val authRepository: AuthRepository,
     userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
@@ -36,11 +39,13 @@ class SharedUserViewModel @Inject constructor(
         userRepository.user,
         userPreferencesRepository.isCloudStorage,
         userPreferencesRepository.streakDays,
-    ) { userData, isCloudSync, streak ->
+        authRepository.observeAuthState()
+    ) { userData, isCloudSync, streak, isLoggedIn ->
         UserUiState(
             displayName = userData?.displayName ?: "there",
             profileImageUrl = userData?.photoUrl,
             isCloudSyncEnabled = isCloudSync,
+            isLoggedIn = isLoggedIn,
             streak = streak,
             stressLevel = 0f
         )
