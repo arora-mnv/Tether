@@ -30,8 +30,6 @@ class ProfileViewModel @Inject constructor(
     private val authManager: FirebaseAuthManager
 ) : ViewModel() {
 
-    val userUiState = userRepository.userUiState
-
     init {
         viewModelScope.launch {
             if (preferencesRepository.isCloudStorage.first()) {

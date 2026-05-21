@@ -2,6 +2,7 @@ package com.anantva.tether.data.repository
 
 import android.util.Log
 import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.local.dao.GoalDao
 import com.anantva.tether.data.local.dao.TransactionDao
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.google.firebase.auth.FirebaseAuth
@@ -26,7 +27,8 @@ private const val TAG = "SyncOrchestrator"
 class SyncOrchestrator @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val syncManager: SyncManager,
-    private val transactionDao: TransactionDao
+    private val transactionDao: TransactionDao,
+    private val goalDao: GoalDao
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var syncJob: Job? = null
@@ -46,12 +48,40 @@ class SyncOrchestrator @Inject constructor(
                 if (isCloud && !uid.isNullOrEmpty()) {
                     listenerJob = scope.launch {
                         Log.d(TAG, "Starting real-time Firestore listener for uid=$uid")
-                        syncManager.observeTransactionsLive(uid).collect { cloudTxns ->
-                            cloudTxns.forEach { txn ->
-                                val existing = transactionDao.getTransactionById(txn.transactionId)
-                                if (existing == null || txn.date > existing.date) {
-                                    transactionDao.upsertTransaction(txn)
+                        launch {
+                            try {
+                                syncManager.observeTransactionsLive(uid).collect { cloudTxns ->
+                                    cloudTxns.forEach { txn ->
+                                        val existing = transactionDao.getTransactionById(txn.transactionId)
+                                        if (existing == null || txn.date > existing.date) {
+                                            transactionDao.upsertTransaction(txn)
+                                        }
+                                    }
                                 }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Transaction listener failed", e)
+                            }
+                        }
+                        launch {
+                            try {
+                                syncManager.observeGoalsLive(uid).collect { goals ->
+                                    goals.forEach { goal ->
+                                        goalDao.upsertGoal(goal)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Goal listener failed", e)
+                            }
+                        }
+                        launch {
+                            try {
+                                syncManager.observePreferencesLive(uid).collect { prefs ->
+                                    if (prefs != null) {
+                                        preferencesRepository.applyMap(prefs)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Preferences listener failed", e)
                             }
                         }
                     }

@@ -8,7 +8,9 @@ import com.anantva.tether.data.local.dao.GoalDao
 import com.anantva.tether.data.local.dao.TransactionDao
 import com.anantva.tether.data.local.dao.TransactionPagingSource
 import com.anantva.tether.data.local.dao.UserProfileDao
+import com.anantva.tether.data.local.entity.GoalContributionEntity
 import com.anantva.tether.data.local.entity.GoalEntity
+import com.anantva.tether.data.local.entity.RecurringType
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.local.entity.UserProfileEntity
 import com.anantva.tether.data.local.dao.CategorySpend
@@ -18,6 +20,7 @@ import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import com.anantva.tether.data.parser.CategoryEngine
 import com.anantva.tether.data.parser.MerchantLearningEngine
+import com.anantva.tether.data.parser.RecurringDetectionEngine
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.Flow
@@ -39,7 +42,8 @@ class TetherRepository(
     private val firestoreRepository: FirestoreRepository,
     private val categoryEngine: CategoryEngine,
     private val transactionDataSource: TransactionDataSourceRouter,
-    private val merchantLearningEngine: MerchantLearningEngine
+    private val merchantLearningEngine: MerchantLearningEngine,
+    private val recurringDetectionEngine: RecurringDetectionEngine
 ) {
 
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
@@ -349,15 +353,10 @@ class TetherRepository(
 
     suspend fun suggestTransactionDetails(merchant: String, type: String): Pair<String, Boolean> {
         val prediction = merchantLearningEngine.predict(merchant)
-        if (prediction != null) {
-            return Pair(prediction.category, false)
-        }
-        val latest = transactionDao.getLatestTransactionByMerchant(merchant)
-        if (latest != null) {
-            val isRecurring = latest.txnCategory == com.anantva.tether.data.local.entity.TxnCategory.RECURRING.toDbValue()
-            return Pair(latest.category, isRecurring)
-        }
-        return Pair(categoryEngine.categorize(merchant, type), false)
+        val category = prediction?.category ?: categoryEngine.categorize(merchant, type)
+        val history = transactionDao.getAllConfirmedTransactions()
+        val recurring = recurringDetectionEngine.detect(merchant, 0.0, category, history)
+        return Pair(category, recurring.showSuggestion)
     }
 
     suspend fun confirmAndUpdateTransaction(
@@ -379,12 +378,125 @@ class TetherRepository(
             existing.copy(amount = amount, merchant = merchant, type = type,
                 status = "CONFIRMED", category = category, txnCategory = txnCategory)
         }
-        transactionDao.upsertTransaction(txn)
-        merchantLearningEngine.learn(merchant, category)
+        return transactionDataSource.updateTransaction(txn)
+    }
+
+    // ==========================================
+    // GOAL CONTRIBUTIONS
+    // ==========================================
+
+    fun getGoalContributions(goalId: Int): Flow<List<GoalContributionEntity>> =
+        goalDao.getGoalContributions(goalId)
+
+    suspend fun replaceGoalContributionForMonth(
+        goalId: Int,
+        amount: Double,
+        timestamp: Long,
+        startOfMonth: Long,
+        endOfMonth: Long
+    ): Boolean {
+        goalDao.deleteGoalContributionForMonth(goalId, startOfMonth, endOfMonth)
+        goalDao.insertGoalContribution(
+            GoalContributionEntity(
+                goalId = goalId,
+                amount = amount,
+                timestamp = System.currentTimeMillis()
+            )
+        )
         if (isCloud() && uid().isNotEmpty()) {
-            firestoreRepository.saveTransaction(uid(), txn)
+            val uid = uid()
+            try {
+                val goalDoc = userDoc(uid).collection("goals")
+                    .document(goalId.toString())
+                val contributionsRef = goalDoc.collection("contributions")
+                val existing = contributionsRef
+                    .whereGreaterThanOrEqualTo("timestamp", startOfMonth)
+                    .whereLessThanOrEqualTo("timestamp", endOfMonth)
+                    .get().await()
+                existing.documents.forEach { it.reference.delete().await() }
+                contributionsRef.add(
+                    mapOf(
+                        "goalId" to goalId,
+                        "amount" to amount,
+                        "timestamp" to System.currentTimeMillis()
+                    )
+                ).await()
+            } catch (_: Exception) { }
         }
         return true
+    }
+
+    suspend fun deleteGoalContributionForMonth(
+        goalId: Int,
+        startOfMonth: Long,
+        endOfMonth: Long
+    ) {
+        goalDao.deleteGoalContributionForMonth(goalId, startOfMonth, endOfMonth)
+        if (isCloud() && uid().isNotEmpty()) {
+            try {
+                val contributionsRef = userDoc(uid()).collection("goals")
+                    .document(goalId.toString()).collection("contributions")
+                val existing = contributionsRef
+                    .whereGreaterThanOrEqualTo("timestamp", startOfMonth)
+                    .whereLessThanOrEqualTo("timestamp", endOfMonth)
+                    .get().await()
+                existing.documents.forEach { it.reference.delete().await() }
+            } catch (_: Exception) { }
+        }
+    }
+
+    // ==========================================
+    // RECURRING DETECTION
+    // ==========================================
+
+    suspend fun detectRecurring(
+        merchant: String,
+        amount: Double,
+        category: String
+    ): RecurringDetectionEngine.DetectionResult {
+        val history = transactionDao.getAllConfirmedTransactions()
+        return recurringDetectionEngine.detect(merchant, amount, category, history)
+    }
+
+    suspend fun isMerchantRecurring(merchant: String): Boolean {
+        val history = transactionDao.getAllConfirmedTransactions()
+        val normalized = SpendingCategories.normalizeMerchant(merchant)
+        val type = RecurringType.infer("", merchant)
+        if (type != RecurringType.OTHER) return true
+        val matches = history.filter {
+            it.type == "Expense" && it.status == "CONFIRMED" &&
+                SpendingCategories.normalizeMerchant(it.merchant).contains(normalized)
+        }
+        return matches.size >= 2
+    }
+
+    suspend fun getRecurringMerchants(): List<String> {
+        return merchantLearningEngine.getRecurringMerchants()
+    }
+
+    suspend fun ensureMonthlyContribution(): Boolean {
+        val activeGoal = goalDao.getActiveGoal().first() ?: return false
+        val amount = preferencesRepository.monthlyCommitment.first().toDoubleOrNull() ?: return false
+        if (amount <= 0.0) return false
+
+        val zone = java.time.ZoneId.systemDefault()
+        val now = java.time.LocalDate.now()
+        val startOfMonth = java.time.YearMonth.from(now)
+            .atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val endOfMonth = java.time.YearMonth.from(now)
+            .plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
+
+        val existing = goalDao.getGoalContributions(activeGoal.goalId).first()
+        val alreadyContributed = existing.any { it.timestamp in startOfMonth..endOfMonth }
+        if (alreadyContributed) return false
+
+        return replaceGoalContributionForMonth(
+            goalId = activeGoal.goalId,
+            amount = amount,
+            timestamp = System.currentTimeMillis(),
+            startOfMonth = startOfMonth,
+            endOfMonth = endOfMonth
+        )
     }
 
     // ==========================================

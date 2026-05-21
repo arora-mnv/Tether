@@ -151,6 +151,12 @@ data class TransactionEntity(
     val typedSpendNature: SpendNature
         get() = SpendNature.fromDbValue(spendNature)
 
+    val isMarkedRecurring: Boolean
+        get() = typedCategory == TxnCategory.RECURRING
+
+    val typedRecurringType: RecurringType
+        get() = RecurringType.infer(category, merchant)
+
     val isStreakRelevant: Boolean
         get() = typedCategory == TxnCategory.NORMAL && type == "Expense"
 

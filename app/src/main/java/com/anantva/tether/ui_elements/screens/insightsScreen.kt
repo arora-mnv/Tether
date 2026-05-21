@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -285,6 +286,8 @@ fun InsightsScreen(
                 }
             }
 
+            item { ThirtyDayPredictionCard(insightsState = insightsState) }
+
             if (insightsState.observations.isNotEmpty()) {
                 item { SmartObservationsSection(observations = insightsState.observations) }
             }
@@ -293,6 +296,65 @@ fun InsightsScreen(
         }
 
         item { Spacer(Modifier.height(32.dp)) }
+    }
+}
+
+@Composable
+private fun ThirtyDayPredictionCard(insightsState: InsightsUiState) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardBg)
+            .padding(18.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "30-day projection",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = if (insightsState.projected30DaySpend > 0)
+                            "${formatCurrency(insightsState.projected30DayDailyAverage)} daily pace"
+                        else
+                            "Needs spending history",
+                        fontSize = 12.sp,
+                        color = GrimeGrey
+                    )
+                }
+                Text(
+                    text = formatCurrency(insightsState.projected30DaySpend),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            LinearProgressIndicator(
+                progress = { insightsState.projected30DayConfidence.coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+                color = TetherRed,
+                trackColor = Color(0xFF2A2A2A)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Top projected category: ${insightsState.projected30DayTopCategory}",
+                fontSize = 12.sp,
+                color = DimWhite
+            )
+        }
     }
 }
 
@@ -939,7 +1001,11 @@ private fun EmptyInsightState() {
 }
 
 @Composable
-fun GoalProgressCard(uiState: DashboardUiState) {
+fun GoalProgressCard(
+    uiState: DashboardUiState,
+    onMarkMonthSaved: (() -> Unit)? = null,
+    onUndoCurrentMonth: (() -> Unit)? = null
+) {
     if (uiState.savingsGoal <= 0.0 || uiState.monthlyCommitment <= 0.0) return
 
     Box(
@@ -997,6 +1063,30 @@ fun GoalProgressCard(uiState: DashboardUiState) {
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
+            }
+            if (onMarkMonthSaved != null && onUndoCurrentMonth != null && !uiState.isGoalCompleted) {
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (uiState.hasSavedCurrentMonth) {
+                        Text(
+                            text = "This month saved",
+                            color = VintageCream,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        TextButton(onClick = onUndoCurrentMonth) {
+                            Text("Undo", color = GrimeGrey)
+                        }
+                    } else {
+                        TextButton(onClick = onMarkMonthSaved) {
+                            Text("Mark month saved", color = VintageCream)
+                        }
+                    }
+                }
             }
         }
     }

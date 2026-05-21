@@ -5,13 +5,14 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.anantva.tether.data.local.entity.GoalEntity
+import com.anantva.tether.data.local.entity.GoalContributionEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GoalDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertGoal(goal: GoalEntity)
+    suspend fun insertGoal(goal: GoalEntity): Long
 
     // The Dashboard needs to know the active goal to calculate the Daily Limit
     @Query("SELECT * FROM goals WHERE isActive = 1 LIMIT 1")
@@ -34,5 +35,20 @@ interface GoalDao {
     suspend fun getAllGoals(): List<GoalEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertGoal(goal: GoalEntity)
+    suspend fun upsertGoal(goal: GoalEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGoalContribution(contribution: GoalContributionEntity): Long
+
+    @Query("SELECT * FROM goal_contributions WHERE goalId = :goalId ORDER BY timestamp ASC")
+    fun getGoalContributions(goalId: Int): Flow<List<GoalContributionEntity>>
+
+    @Query("SELECT * FROM goal_contributions ORDER BY timestamp ASC")
+    suspend fun getAllGoalContributions(): List<GoalContributionEntity>
+
+    @Query("DELETE FROM goal_contributions WHERE goalId = :goalId AND timestamp >= :startOfMonth AND timestamp <= :endOfMonth")
+    suspend fun deleteGoalContributionForMonth(goalId: Int, startOfMonth: Long, endOfMonth: Long)
+
+    @Query("SELECT SUM(amount) FROM goal_contributions WHERE goalId = :goalId")
+    fun getTotalContributions(goalId: Int): Flow<Double?>
 }

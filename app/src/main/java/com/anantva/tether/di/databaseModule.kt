@@ -10,6 +10,7 @@ import com.anantva.tether.data.local.dao.TransactionDao
 import com.anantva.tether.data.local.dao.UserProfileDao
 import com.anantva.tether.data.parser.CategoryEngine
 import com.anantva.tether.data.parser.MerchantLearningEngine
+import com.anantva.tether.data.parser.RecurringDetectionEngine
 import com.anantva.tether.data.repository.FirestoreRepository
 import com.anantva.tether.data.repository.TransactionDataSourceRouter
 import com.anantva.tether.data.repository.TetherRepository
@@ -76,20 +77,22 @@ object DatabaseModule {
         authManager: FirebaseAuthManager,
         firestoreRepository: FirestoreRepository,
         transactionDataSource: TransactionDataSourceRouter,
-        merchantLearningEngine: MerchantLearningEngine
+        merchantLearningEngine: MerchantLearningEngine,
+        recurringDetectionEngine: RecurringDetectionEngine
     ): TetherRepository {
         val categoryEngine = CategoryEngine(db.categoryCorrectionDao())
         return TetherRepository(
-            userProfileDao        = db.userProfileDao(),
-            goalDao               = db.goalDao(),
-            transactionDao        = db.transactionDao(),
-            categoryCorrectionDao = db.categoryCorrectionDao(),
-            preferencesRepository = preferencesRepository,
-            authManager           = authManager,
-            firestoreRepository   = firestoreRepository,
-            categoryEngine        = categoryEngine,
-            transactionDataSource = transactionDataSource,
-            merchantLearningEngine = merchantLearningEngine
+            userProfileDao          = db.userProfileDao(),
+            goalDao                 = db.goalDao(),
+            transactionDao          = db.transactionDao(),
+            categoryCorrectionDao   = db.categoryCorrectionDao(),
+            preferencesRepository   = preferencesRepository,
+            authManager             = authManager,
+            firestoreRepository     = firestoreRepository,
+            categoryEngine          = categoryEngine,
+            transactionDataSource   = transactionDataSource,
+            merchantLearningEngine  = merchantLearningEngine,
+            recurringDetectionEngine = recurringDetectionEngine
         )
     }
 }

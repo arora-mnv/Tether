@@ -5,8 +5,10 @@ import com.anantva.tether.auth.FirebaseAuthManager
 import com.anantva.tether.data.local.UserPreferencesRepository
 import com.anantva.tether.data.local.dao.CategorySpend
 import com.anantva.tether.data.local.entity.TransactionEntity
+import com.anantva.tether.data.local.entity.TxnCategory
 import com.anantva.tether.data.parser.CategoryEngine
 import com.anantva.tether.data.parser.MerchantLearningEngine
+import com.anantva.tether.data.parser.RecurringDetectionEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -22,7 +24,8 @@ class TransactionDataSourceRouter @Inject constructor(
     private val authManager: FirebaseAuthManager,
     private val categoryEngine: CategoryEngine,
     private val firestoreRepository: FirestoreRepository,
-    private val merchantLearningEngine: MerchantLearningEngine
+    private val merchantLearningEngine: MerchantLearningEngine,
+    private val recurringDetectionEngine: RecurringDetectionEngine
 ) : TransactionDataSource {
 
     // Always read from local (Room) which is reactive via Room DAO flows.
@@ -86,10 +89,10 @@ class TransactionDataSourceRouter @Inject constructor(
 
     override suspend fun updateTransactionCategory(transactionId: Long, newCategory: String): Boolean {
         val txn = local.getTransactionById(transactionId) ?: return false
-        if (!local.updateTransactionCategory(transactionId, newCategory)) return false
         val updated = enrichTransaction(txn.copy(category = newCategory))
+        if (!local.updateTransaction(updated)) return false
         persistCategoryLearning(updated)
-        if (shouldSyncToCloud()) cloud.updateTransactionCategory(transactionId, newCategory)
+        if (shouldSyncToCloud()) cloud.updateTransaction(updated)
         return true
     }
 
@@ -112,15 +115,35 @@ class TransactionDataSourceRouter @Inject constructor(
         } else {
             categoryEngine.categorize(transaction.merchant, transaction.type)
         }
+        val txnCategory = if (
+            transaction.type == "Expense" &&
+            transaction.txnCategory == TxnCategory.NORMAL.toDbValue()
+        ) {
+            val history = local.getAllConfirmedTransactions()
+                .filter { it.transactionId != transaction.transactionId }
+            val recurringResult = recurringDetectionEngine.detect(
+                merchant = transaction.merchant,
+                amount = transaction.amount,
+                category = category,
+                history = history
+            )
+            if (recurringResult.showSuggestion) {
+                TxnCategory.RECURRING.toDbValue()
+            } else {
+                transaction.txnCategory
+            }
+        } else {
+            transaction.txnCategory
+        }
         val spendNature = if (transaction.type == "Expense") {
             com.anantva.tether.data.local.entity.SpendingCategories.spendNatureFor(
                 category = category, merchant = transaction.merchant,
-                txnCategory = transaction.txnCategory
+                txnCategory = txnCategory
             ).toDbValue()
         } else {
             transaction.spendNature
         }
-        return transaction.copy(category = category, spendNature = spendNature)
+        return transaction.copy(category = category, txnCategory = txnCategory, spendNature = spendNature)
     }
 
     private suspend fun persistCategoryLearning(transaction: TransactionEntity) {

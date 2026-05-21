@@ -32,6 +32,7 @@ import com.anantva.tether.ui_elements.screens.ReceiptImportViewModel
 import com.anantva.tether.ui_elements.screens.SplashScreen
 import com.anantva.tether.ui_elements.screens.TransactionToastEvent
 import com.anantva.tether.ui_elements.screens.setup.SetupWizardScreen
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
                     var startDestination by remember { mutableStateOf<String?>(null) }
 
                     LaunchedEffect(Unit) {
+                        val gateStartedAt = System.currentTimeMillis()
                         val onboardingCompleted = preferencesRepository.hasCompletedOnboarding.first()
                         val setupCompleted = preferencesRepository.hasCompletedSetup.first()
                         val isCloudSyncEnabled = preferencesRepository.isCloudStorage.first()
@@ -82,6 +84,8 @@ class MainActivity : ComponentActivity() {
                             else -> "dashboard"
                         }
 
+                        val remainingSplashMs = 3000L - (System.currentTimeMillis() - gateStartedAt)
+                        if (remainingSplashMs > 0) delay(remainingSplashMs)
                         isReady = true
                     }
 
@@ -129,10 +133,19 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable("setup") {
+                                val scope = rememberCoroutineScope()
                                 SetupWizardScreen(
                                     onSetupComplete = {
-                                        navController.navigate("dashboard") {
-                                            popUpTo("setup") { inclusive = true }
+                                        scope.launch {
+                                            val cloudEnabled = preferencesRepository.isCloudStorage.first()
+                                            val destination = if (cloudEnabled && !authRepository.isLoggedIn()) {
+                                                "auth"
+                                            } else {
+                                                "dashboard"
+                                            }
+                                            navController.navigate(destination) {
+                                                popUpTo("setup") { inclusive = true }
+                                            }
                                         }
                                     }
                                 )
@@ -179,7 +192,12 @@ class MainActivity : ComponentActivity() {
     private fun handleShareIntent(intent: Intent?) {
         Log.d("TetherShare", "Action: ${intent?.action}, Type: ${intent?.type}")
         if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("image/") == true) {
-            val imageUri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+            val imageUri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+            }
             if (imageUri != null) {
                 Log.d("TetherShare", "Received image: $imageUri")
                 Toast.makeText(this, "Screenshot received", Toast.LENGTH_SHORT).show()

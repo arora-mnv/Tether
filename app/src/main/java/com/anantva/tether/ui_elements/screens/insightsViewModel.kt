@@ -13,9 +13,14 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import com.anantva.tether.calculator.use_case.CalculateDailyLimitUseCase
 import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.local.entity.SpendingCategories
+import com.anantva.tether.data.local.entity.TransactionEntity
+import com.anantva.tether.data.local.entity.TxnCategory
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlin.math.roundToInt
 import javax.inject.Inject
 
 data class InsightsUiState(
@@ -50,7 +55,11 @@ data class InsightsUiState(
     val personalityTitle: String = "Reading your rhythm\u2026",
     val personalityDescription: String = "Learning your financial patterns over time.",
     val personalityWaveformSharpness: Float = 0f,
-    val personalityWaveformSpeed: Float = 0.8f
+    val personalityWaveformSpeed: Float = 0.8f,
+    val projected30DaySpend: Int = 0,
+    val projected30DayDailyAverage: Int = 0,
+    val projected30DayTopCategory: String = "No pattern",
+    val projected30DayConfidence: Float = 0f
 )
 
 @HiltViewModel
@@ -138,6 +147,7 @@ class InsightsViewModel @Inject constructor(
         )
         val mood = computeDailyMood(daily, dailyLimitResult.exceeded, behaviorSnapshot)
         val obs = computeObservations(daily, weekly, dailyLimitResult.exceeded, streakDays)
+        val prediction = computeThirtyDayPrediction(transactions)
 
         InsightsUiState(
             dailyTotalSpend = daily.totalSpend,
@@ -171,7 +181,11 @@ class InsightsViewModel @Inject constructor(
             personalityTitle = behaviorSnapshot.personalityProfile.title,
             personalityDescription = behaviorSnapshot.personalityProfile.description,
             personalityWaveformSharpness = behaviorSnapshot.personalityProfile.waveformSharpness,
-            personalityWaveformSpeed = behaviorSnapshot.personalityProfile.waveformSpeed
+            personalityWaveformSpeed = behaviorSnapshot.personalityProfile.waveformSpeed,
+            projected30DaySpend = prediction.projectedSpend,
+            projected30DayDailyAverage = prediction.dailyAverage,
+            projected30DayTopCategory = prediction.topCategory,
+            projected30DayConfidence = prediction.confidence
         )
     }.stateIn(
         scope = viewModelScope,
@@ -319,6 +333,56 @@ class InsightsViewModel @Inject constructor(
         }
 
         return result.take(3)
+    }
+
+    private data class ThirtyDayPrediction(
+        val projectedSpend: Int,
+        val dailyAverage: Int,
+        val topCategory: String,
+        val confidence: Float
+    )
+
+    private fun computeThirtyDayPrediction(transactions: List<TransactionEntity>): ThirtyDayPrediction {
+        val today = LocalDate.now()
+        val start = today.minusDays(29).atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
+        val recentExpenses = transactions.filter { txn ->
+            txn.status == "CONFIRMED" &&
+                txn.type == "Expense" &&
+                txn.typedCategory == TxnCategory.NORMAL &&
+                txn.date in start..end
+        }
+        if (recentExpenses.isEmpty()) {
+            return ThirtyDayPrediction(0, 0, "No pattern", 0f)
+        }
+
+        val activeDays = recentExpenses
+            .map { Instant.ofEpochMilli(it.date).atZone(zone).toLocalDate() }
+            .distinct()
+            .size
+            .coerceAtLeast(1)
+        val observedWindowDays = minOf(30, java.time.temporal.ChronoUnit.DAYS.between(
+            recentExpenses.minOf { Instant.ofEpochMilli(it.date).atZone(zone).toLocalDate() },
+            today
+        ).toInt() + 1).coerceAtLeast(activeDays)
+
+        val dailyAverage = (recentExpenses.sumOf { it.amount } / observedWindowDays).roundToInt()
+        val category = recentExpenses
+            .groupBy { it.category.ifBlank { SpendingCategories.OTHER } }
+            .maxByOrNull { (_, txns) -> txns.sumOf { it.amount } }
+            ?.key ?: "No pattern"
+        val confidence = when {
+            activeDays >= 15 -> 0.9f
+            activeDays >= 8 -> 0.7f
+            activeDays >= 4 -> 0.45f
+            else -> 0.25f
+        }
+        return ThirtyDayPrediction(
+            projectedSpend = dailyAverage * 30,
+            dailyAverage = dailyAverage,
+            topCategory = category,
+            confidence = confidence
+        )
     }
 
     private fun startOfToday(): Long =

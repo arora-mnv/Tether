@@ -70,9 +70,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.anantva.tether.data.local.entity.TransactionEntity
-import com.anantva.tether.data.repository.UserData
+import com.anantva.tether.ui_elements.components.SharedUserViewModel
 import com.anantva.tether.ui_elements.components.TetherAvatar
+import com.anantva.tether.ui_elements.components.UserUiState
 import com.anantva.tether.ui_elements.components.TetherBottomNavBar
 import com.anantva.tether.ui_elements.components.TetherOrb
 import com.anantva.tether.ui_elements.components.OrbTier
@@ -81,6 +83,7 @@ import com.anantva.tether.ui.theme.VintageCream
 import com.google.firebase.BuildConfig
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
+import java.time.LocalDate
 import java.time.LocalTime
 import java.util.Locale
 import kotlin.math.cos
@@ -101,7 +104,8 @@ fun DashboardScreen(
     manualTxnViewModel: ManualTransactionViewModel = hiltViewModel(),
     pendingListViewModel: PendingTransactionsViewModel = hiltViewModel(),
     insightsViewModel: InsightsViewModel = hiltViewModel(),
-    receiptImportViewModel: com.anantva.tether.ui_elements.screens.ReceiptImportViewModel = hiltViewModel()
+    receiptImportViewModel: com.anantva.tether.ui_elements.screens.ReceiptImportViewModel = hiltViewModel(),
+    sharedUserViewModel: com.anantva.tether.ui_elements.components.SharedUserViewModel = hiltViewModel()
 ) {
     val uiState         by viewModel.uiState.collectAsState()
     val pendingState    by pendingViewModel.uiState.collectAsState()
@@ -109,7 +113,7 @@ fun DashboardScreen(
     val insightsState   by insightsViewModel.uiState.collectAsState()
     val spendTrendValues by insightsViewModel.spendTrendValues.collectAsState()
     val trendLabels = insightsViewModel.trendLabels
-    val userUiState by viewModel.userUiState.collectAsState()
+    val userUiState by sharedUserViewModel.uiState.collectAsStateWithLifecycle()
     var selectedDestination by remember { mutableStateOf<TetherNav>(TetherNav.Home) }
     var showManualEntry by remember { mutableStateOf(false) }
     var showActionSheet by remember { mutableStateOf(false) }
@@ -201,7 +205,8 @@ fun DashboardScreen(
     if (showProfile) {
         ProfileSheet(
             onDismiss = { showProfile = false },
-            personality = insightsState?.spendingPersonality ?: "Forming"
+            personality = insightsState?.spendingPersonality ?: "Forming",
+            userUiState = userUiState
         )
     }
 
@@ -268,6 +273,8 @@ fun DashboardScreen(
                     insightsState = insightsState,
                     onNavigateToInsights = { selectedDestination = TetherNav.Insights },
                     onNavigateToVault = { selectedDestination = TetherNav.Vault },
+                    onMarkMonthSaved = viewModel::markCurrentMonthSaved,
+                    onUndoCurrentMonth = viewModel::undoCurrentMonthContribution,
                     onDebugSetStreak = if (BuildConfig.DEBUG) { value -> viewModel.debugSetStreak(value) } else null
                 )
                 is TetherNav.Insights -> InsightsScreen(
@@ -298,10 +305,12 @@ fun HomeContent(
     pendingTransactions: List<TransactionEntity>,
     onSeeAllPending: () -> Unit,
     onOpenProfile: () -> Unit,
-    userUiState: com.anantva.tether.data.repository.UserUiState = com.anantva.tether.data.repository.UserUiState(),
+    userUiState: UserUiState = UserUiState(),
     insightsState: com.anantva.tether.ui_elements.screens.InsightsUiState? = null,
     onNavigateToInsights: () -> Unit = {},
     onNavigateToVault: () -> Unit = {},
+    onMarkMonthSaved: () -> Unit = {},
+    onUndoCurrentMonth: () -> Unit = {},
     onDebugSetStreak: ((Int) -> Unit)? = null
 ) {
     var momentumState by remember { mutableStateOf(OrbMomentumState.ALIVE) }
@@ -371,7 +380,13 @@ fun HomeContent(
 
             item { Spacer(Modifier.height(18.dp)) }
 
-            item { GoalProgressCard(uiState = uiState) }
+            item {
+                GoalProgressCard(
+                    uiState = uiState,
+                    onMarkMonthSaved = onMarkMonthSaved,
+                    onUndoCurrentMonth = onUndoCurrentMonth
+                )
+            }
 
             item { PendingSection(pendingTransactions = pendingTransactions, onSeeAll = onSeeAllPending) }
 
@@ -404,9 +419,27 @@ fun formatCurrency(amount: Double): String {
 @Composable
 private fun DashboardTopBar(
     onOpenProfile: () -> Unit,
-    userUiState: com.anantva.tether.data.repository.UserUiState = com.anantva.tether.data.repository.UserUiState(),
+    userUiState: UserUiState = UserUiState(),
     usagePercent: Float = 0f
 ) {
+    val firstName = userUiState.displayName
+        .takeIf { it.isNotBlank() && it != "there" }
+        ?.trim()
+        ?.substringBefore(" ")
+    val greeting = when (LocalTime.now().hour) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        in 17..21 -> "Good evening"
+        else -> "Still awake"
+    }
+    val tips = listOf(
+        "Check the daily limit before your next spend",
+        "Recurring bills stay out of streak damage",
+        "Small wants add up fastest near month end",
+        "Mark this month's saving once it actually moves"
+    )
+    val subtext = tips[LocalDate.now().dayOfYear % tips.size]
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -416,20 +449,20 @@ private fun DashboardTopBar(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Hi, there",
+                text = if (firstName == null) greeting else "$greeting, $firstName",
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Let's keep that streak going",
+                text = subtext,
                 color = GrimeGrey,
                 fontSize = 13.sp
             )
         }
 
         TetherAvatar(
-            imageUrl = userUiState.profileImageUrl,
+            userUiState = userUiState.copy(stressLevel = usagePercent.coerceIn(0f, 1f)),
             size = 42.dp,
             modifier = Modifier.clickable(onClick = onOpenProfile)
         )
@@ -865,7 +898,7 @@ fun GrowthPlaceholderScreen(innerPadding: PaddingValues) {
                 Spacer(modifier = Modifier.height(20.dp))
 
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Filled.TrendingUp,
+                    imageVector = Icons.Filled.TrendingUp,
                     contentDescription = "Growth",
                     modifier = Modifier.size(48.dp),
                     tint = Color.White

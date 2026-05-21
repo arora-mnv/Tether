@@ -16,6 +16,7 @@ import com.anantva.tether.data.local.entity.GoalEntity
 import com.anantva.tether.data.local.entity.MerchantPatternEntity
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.local.entity.UserProfileEntity
+import com.anantva.tether.data.local.entity.GoalContributionEntity
 
 // We must list every Entity here so Room knows what tables to create
 @Database(
@@ -24,9 +25,10 @@ import com.anantva.tether.data.local.entity.UserProfileEntity
         TransactionEntity::class,
         GoalEntity::class,
         CategoryCorrectionEntity::class,
-        MerchantPatternEntity::class
+        MerchantPatternEntity::class,
+        GoalContributionEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -122,6 +124,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS goal_contributions (" +
+                    "contributionId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "goalId INTEGER NOT NULL, " +
+                    "amount REAL NOT NULL, " +
+                    "timestamp INTEGER NOT NULL, " +
+                    "FOREIGN KEY(goalId) REFERENCES goals(goalId) ON DELETE CASCADE)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_goal_contributions_goalId ON goal_contributions(goalId)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -129,7 +145,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tether_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
 
                 INSTANCE = instance

@@ -57,6 +57,7 @@ interface TransactionDao {
         FROM transactions
         WHERE status = 'CONFIRMED'
           AND type = 'Expense'
+          AND txnCategory = 'NORMAL'
           AND date BETWEEN :startOfDay AND :endOfDay
         """
     )

@@ -14,9 +14,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
 import javax.inject.Inject
 
 data class SettingsUiState(
@@ -40,11 +48,25 @@ class SettingsViewModel @Inject constructor(
     private val _syncState = MutableStateFlow<SyncResult?>(null)
     val syncState: StateFlow<SyncResult?> = _syncState
 
+    private val zone = ZoneId.systemDefault()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val savedCurrentMonth = tetherRepository.getActiveGoal().flatMapLatest { goal ->
+        if (goal == null || goal.goalId <= 0) {
+            flowOf(false)
+        } else {
+            val range = monthRange(LocalDate.now())
+            tetherRepository.getGoalContributions(goal.goalId).map { contributions ->
+                contributions.any { it.timestamp in range.first..range.second }
+            }
+        }
+    }
+
     val uiState: StateFlow<SettingsUiState> = combine(
         preferencesRepository.savingsGoal,
         preferencesRepository.monthlyCommitment,
         preferencesRepository.isCloudStorage,
-        preferencesRepository.hasSavedCommitment,
+        savedCurrentMonth,
         preferencesRepository.notificationsEnabled
     ) { goal, commitment, cloud, hasSavedCommitment, notifications ->
         SettingsUiState(
@@ -77,7 +99,25 @@ class SettingsViewModel @Inject constructor(
 
     fun setHasSavedCommitment(value: Boolean) {
         viewModelScope.launch {
-            preferencesRepository.setHasSavedCommitment(value)
+            val activeGoal = tetherRepository.getActiveGoal().first()
+            val amount = preferencesRepository.monthlyCommitment.first().toDoubleOrNull() ?: 0.0
+            val range = monthRange(LocalDate.now())
+            if (activeGoal == null || activeGoal.goalId <= 0 || amount <= 0.0) {
+                preferencesRepository.setHasSavedCommitment(value)
+                return@launch
+            }
+            if (value) {
+                tetherRepository.replaceGoalContributionForMonth(
+                    goalId = activeGoal.goalId,
+                    amount = amount,
+                    timestamp = System.currentTimeMillis(),
+                    startOfMonth = range.first,
+                    endOfMonth = range.second
+                )
+            } else {
+                tetherRepository.deleteGoalContributionForMonth(activeGoal.goalId, range.first, range.second)
+            }
+            preferencesRepository.setHasSavedCommitment(false)
         }
     }
 
@@ -144,5 +184,20 @@ class SettingsViewModel @Inject constructor(
             preferencesRepository.setCloudStorageEnabled(false)
             preferencesRepository.updateUserProfile(name = "", email = "", phone = "")
         }
+    }
+
+    private fun monthRange(date: LocalDate): Pair<Long, Long> {
+        val start = YearMonth.from(date)
+            .atDay(1)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli()
+        val end = YearMonth.from(date)
+            .plusMonths(1)
+            .atDay(1)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli() - 1
+        return start to end
     }
 }

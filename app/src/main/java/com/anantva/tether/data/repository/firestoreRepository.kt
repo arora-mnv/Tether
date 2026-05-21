@@ -2,7 +2,9 @@ package com.anantva.tether.data.repository
 
 import android.util.Log
 import com.anantva.tether.data.local.entity.CategoryCorrectionEntity
+import com.anantva.tether.data.local.entity.GoalContributionEntity
 import com.anantva.tether.data.local.entity.GoalEntity
+import com.anantva.tether.data.local.entity.MerchantPatternEntity
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.FieldValue
@@ -33,6 +35,9 @@ class FirestoreRepository @Inject constructor() {
 
     private fun userCategoryCorrectionsRef(userId: String) =
         firestore.collection("users").document(userId).collection("categoryCorrections")
+
+    private fun userMerchantPatternsRef(userId: String) =
+        firestore.collection("users").document(userId).collection("merchantPatterns")
 
     suspend fun saveTransaction(userId: String, transaction: TransactionEntity): Boolean {
         return try {
@@ -174,7 +179,7 @@ class FirestoreRepository @Inject constructor() {
     suspend fun getGoals(userId: String): List<GoalEntity> {
         return try {
             val snapshot = userGoalsRef(userId)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .orderBy("startDate", Query.Direction.DESCENDING)
                 .get()
                 .await()
             snapshot.documents.mapNotNull { doc ->
@@ -198,7 +203,7 @@ class FirestoreRepository @Inject constructor() {
 
     fun observeGoals(userId: String): Flow<List<GoalEntity>> = callbackFlow {
         val registration = userGoalsRef(userId)
-            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .orderBy("startDate", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     val msg = error.message ?: ""
@@ -238,6 +243,38 @@ class FirestoreRepository @Inject constructor() {
         } catch (e: Exception) {
             Log.e(TAG, "deleteGoal Firestore error for userId=$userId, goalId=$goalId", e)
             false
+        }
+    }
+
+    suspend fun saveGoalContribution(userId: String, contribution: GoalContributionEntity): Boolean {
+        return try {
+            userGoalsRef(userId)
+                .document(contribution.goalId.toString())
+                .collection("contributions")
+                .document(contribution.contributionId.toString())
+                .set(contribution.toMap())
+                .await()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "saveGoalContribution error for userId=$userId goalId=${contribution.goalId}", e)
+            false
+        }
+    }
+
+    suspend fun getGoalContributions(userId: String, goalId: Int): List<GoalContributionEntity> {
+        return try {
+            userGoalsRef(userId)
+                .document(goalId.toString())
+                .collection("contributions")
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc ->
+                    runCatching { GoalContributionEntity.fromMap(doc.data ?: emptyMap()) }.getOrNull()
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "getGoalContributions error for userId=$userId goalId=$goalId", e)
+            emptyList()
         }
     }
 
@@ -327,6 +364,63 @@ class FirestoreRepository @Inject constructor() {
         }
     }
 
+    fun observePreferencesMap(userId: String): Flow<Map<String, Any>?> = callbackFlow {
+        val registration = userPreferencesRef(userId)
+            .document("main")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "observePreferencesMap error for uid=$userId", error)
+                    trySend(null)
+                    return@addSnapshotListener
+                }
+                trySend(snapshot?.data)
+            }
+        awaitClose { registration.remove() }
+    }
+
+    suspend fun saveMerchantPattern(userId: String, pattern: MerchantPatternEntity): Boolean {
+        return try {
+            userMerchantPatternsRef(userId)
+                .document(pattern.normalizedMerchant)
+                .set(
+                    mapOf(
+                        "normalizedMerchant" to pattern.normalizedMerchant,
+                        "category" to pattern.category,
+                        "confidenceScore" to pattern.confidenceScore,
+                        "usageCount" to pattern.usageCount,
+                        "lastUsedTimestamp" to pattern.lastUsedTimestamp
+                    )
+                )
+                .await()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "saveMerchantPattern error for userId=$userId key=${pattern.normalizedMerchant}", e)
+            false
+        }
+    }
+
+    suspend fun getMerchantPatterns(userId: String): List<MerchantPatternEntity> {
+        return try {
+            userMerchantPatternsRef(userId)
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc ->
+                    val data = doc.data ?: return@mapNotNull null
+                    MerchantPatternEntity(
+                        normalizedMerchant = (data["normalizedMerchant"] as? String) ?: doc.id,
+                        category = data["category"] as? String ?: return@mapNotNull null,
+                        confidenceScore = (data["confidenceScore"] as? Number)?.toFloat() ?: 0.5f,
+                        usageCount = (data["usageCount"] as? Number)?.toInt() ?: 1,
+                        lastUsedTimestamp = (data["lastUsedTimestamp"] as? Number)?.toLong() ?: 0L
+                    )
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "getMerchantPatterns error for userId=$userId", e)
+            emptyList()
+        }
+    }
+
     suspend fun getUserProfileMap(userId: String): Map<String, Any>? {
         return try {
             val doc = firestore.collection("users").document(userId)
@@ -352,12 +446,18 @@ class FirestoreRepository @Inject constructor() {
 
     // ── Profile methods ──
 
-    suspend fun saveUserProfile(userId: String, name: String, phoneNumber: String): Boolean {
+    suspend fun saveUserProfile(
+        userId: String,
+        name: String,
+        phoneNumber: String,
+        photoUrl: String = ""
+    ): Boolean {
         return try {
             Log.d(TAG, "saveUserProfile uid=$userId name=$name")
             val profileDoc = mapOf(
                 "name" to name,
                 "phoneNumber" to phoneNumber,
+                "photoUrl" to photoUrl,
                 "createdAt" to FieldValue.serverTimestamp()
             )
             firestore.collection("users").document(userId)
@@ -387,7 +487,8 @@ class FirestoreRepository @Inject constructor() {
             if (doc.exists()) {
                 val data = UserProfileData(
                     name = doc.getString("name") ?: "",
-                    phoneNumber = doc.getString("phoneNumber") ?: ""
+                    phoneNumber = doc.getString("phoneNumber") ?: "",
+                    photoUrl = doc.getString("photoUrl") ?: ""
                 )
                 Log.d(TAG, "getUserProfile uid=$userId found name=${data.name}")
                 data
@@ -423,13 +524,25 @@ class FirestoreRepository @Inject constructor() {
 
             val goals = userGoalsRef(userId).get().await()
             val batch2 = firestore.batch()
-            goals.documents.forEach { batch2.delete(it.reference) }
+            goals.documents.forEach { goalDoc ->
+                val contributions = goalDoc.reference.collection("contributions").get().await()
+                contributions.documents.forEach { batch2.delete(it.reference) }
+                batch2.delete(goalDoc.reference)
+            }
             batch2.commit().await()
 
             val corrections = userDoc.collection("categoryCorrections").get().await()
             val batch3 = firestore.batch()
             corrections.documents.forEach { batch3.delete(it.reference) }
             batch3.commit().await()
+
+            val merchantPatterns = userDoc.collection("merchantPatterns").get().await()
+            val batch4 = firestore.batch()
+            merchantPatterns.documents.forEach { batch4.delete(it.reference) }
+            batch4.commit().await()
+
+            userDoc.collection("preferences").document("main").delete().await()
+            userDoc.collection("profile").document("main").delete().await()
 
             userDoc.delete().await()
             Log.d(TAG, "deleteAllUserData: success for userId=$userId")
@@ -456,5 +569,6 @@ class FirestoreRepository @Inject constructor() {
 
 data class UserProfileData(
     val name: String,
-    val phoneNumber: String
+    val phoneNumber: String,
+    val photoUrl: String = ""
 )

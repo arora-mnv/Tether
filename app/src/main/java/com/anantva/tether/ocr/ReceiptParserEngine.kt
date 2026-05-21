@@ -10,20 +10,6 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-
-
-data class ParsedReceipt(
-    val amount: Double?,
-    val receiver: String?,
-    val timestamp: Long?,
-    val transactionId: String?,
-    val upiId: String?,
-    val appSource: String?,
-    val status: String?,
-    val confidence: Float,
-    val rawText: String
-)
-
 @Singleton
 class ReceiptParserEngine @Inject constructor() {
 
@@ -46,74 +32,36 @@ class ReceiptParserEngine @Inject constructor() {
                 return@withContext emptyReceipt(text, 0f)
             }
 
+            val normalizedText = ReceiptOcrNormalizer.normalizeFullText(text)
             val blocks = result.textBlocks.map { block ->
                 val rect = block.boundingBox
                 OcrBlock(
-                    text = block.text,
+                    text = ReceiptOcrNormalizer.normalizeLine(block.text),
                     top = rect?.top ?: 0,
                     bottom = rect?.bottom ?: 0
                 )
             }
             val imageHeight = bitmap.height
 
-            val normalizedText = normalizeOcrText(text)
-            val lines = normalizedText.lines().map { it.trim() }.filter { it.isNotBlank() }
-            val ocrLines = lines.map { OcrLine(it) }
+            val ocrLines = ReceiptOcrNormalizer.linesFromText(normalizedText)
+            val detectedApp = ReceiptAppDetector.detect(blocks, ocrLines)
 
             safeLog("ReceiptImport", "OCR lines:\n" + ocrLines.mapIndexed { i, l -> "  $i: ${l.text}" }.joinToString("\n"))
             safeLog("ReceiptImport", "OCR blocks:\n" + blocks.mapIndexed { i, b -> "  $i: ${b.text}" }.joinToString("\n"))
 
-            for (parser in parsers) {
-                if (parser.canParse(blocks)) {
-                    return@withContext parser.parse(blocks, ocrLines, text, imageHeight)
-                }
+            val parser = parsers.firstOrNull { it.app == detectedApp }
+                ?: parsers.firstOrNull { it.canParse(blocks) }
+
+            if (parser != null) {
+                val parsed = parser.parse(blocks, ocrLines, normalizedText, imageHeight)
+                return@withContext parsed.copy(detectedApp = parser.app)
             }
 
-            return@withContext emptyReceipt(text, 0f)
+            return@withContext emptyReceipt(normalizedText, 0f).copy(detectedApp = detectedApp)
 
         } catch (e: Exception) {
             emptyReceipt("Error: ${e.message}", 0f)
         }
-    }
-
-    private fun normalizeOcrText(raw: String): String {
-        var text = raw
-
-        text = text.replace("₹", "₹")
-        text = text.replace("₨", "₹")
-
-        text = text.replace(Regex("""T(?=\d)"""), "₹")
-
-        text = text.replace("Rs.", "₹", ignoreCase = true)
-        text = text.replace("INR", "₹", ignoreCase = true)
-
-        text = text.replace("|", "1")
-        text = text.replace(Regex("""(?<=\d)O"""), "0")
-        text = text.replace(Regex("""(?<=\d)S(?=\d)"""), "5")
-
-        text = text.replace(",", "")
-
-        text = text.replace(Regex("""[ \t]+"""), " ")
-
-        return text.trim()
-    }
-
-
-
-    private fun extractTransactionId(lines: List<OcrLine>): String? {
-        val patterns = listOf(
-            Regex("""(?:UPI transaction ID|UPI Ref ID|UTR|Ref ID|Transaction ID)[\s:]*([A-Za-z0-9]{12,})""", RegexOption.IGNORE_CASE),
-            Regex("""\b([0-9]{12})\b""")
-        )
-        for (line in lines) {
-            for (pattern in patterns) {
-                val match = pattern.find(line.text)
-                if (match != null) {
-                    return match.groupValues[1]
-                }
-            }
-        }
-        return null
     }
 
     private fun safeLog(tag: String, msg: String) {

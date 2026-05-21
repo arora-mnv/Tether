@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.anantva.tether.ui_elements.components.TetherAvatar
+import com.anantva.tether.ui_elements.components.UserUiState
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
@@ -112,10 +113,10 @@ private fun personalitySubtext(p: String, streakDays: Int): String = when {
 fun ProfileSheet(
     onDismiss: () -> Unit,
     personality: String = "Forming",
+    userUiState: UserUiState = UserUiState(),
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val userUiState by viewModel.userUiState.collectAsState()
     val statePersonality = if (personality != "Forming") personality else uiState.personality
 
     var name by remember(uiState.name) { mutableStateOf(uiState.name) }
@@ -199,7 +200,7 @@ fun ProfileSheet(
                     }
 
                     TetherAvatar(
-                        imageUrl = userUiState.profileImageUrl,
+                        userUiState = userUiState,
                         size = 88.dp
                     )
 

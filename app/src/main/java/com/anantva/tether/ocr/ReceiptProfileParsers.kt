@@ -1,16 +1,5 @@
 package com.anantva.tether.ocr
 
-data class OcrLine(val text: String)
-data class OcrBlock(val text: String, val top: Int, val bottom: Int)
-
-enum class ReceiptApp {
-    GPAY,
-    PHONEPE,
-    PAYTM,
-    CRED,
-    UNKNOWN
-}
-
 interface ReceiptParser {
     val app: ReceiptApp
     fun canParse(blocks: List<OcrBlock>): Boolean
@@ -18,81 +7,20 @@ interface ReceiptParser {
 }
 
 // Helpers
-private fun extractCleanAmount(text: String): Double? {
-    var textMod = text
-    val hasTimestamp = Regex("""\d{1,2}:\d{2}\s*(?:am|pm|AM|PM)""").containsMatchIn(textMod) || Regex("""\d{1,2}/\d{1,2}/\d{2,4}""").containsMatchIn(textMod) || Regex("""\d{1,2}\s+[a-zA-Z]{3,}\s+\d{4}""").containsMatchIn(textMod)
-    if (!hasTimestamp) {
-        textMod = textMod.replace(Regex("""\bT(?=\s*\d)"""), "₹")
-    }
-    val normalized = textMod.replace(",", "").replace(" ", "").replace("\n", "")
-    val amountRegex = Regex("""(?:₹|Rs\.?|INR)\s*([0-9]{1,3}(?:,[0-9]{3})*|[0-9]+)""", RegexOption.IGNORE_CASE)
-    val match = amountRegex.find(normalized) ?: return null
-    val raw = match.groupValues[1]
-    if (raw.length >= 10) return null
-    val parsed = raw.toDoubleOrNull()
-    return parsed
-}
+private fun extractCleanAmount(text: String): Double? =
+    ReceiptAmountExtractor.extractFromLine(text).maxOrNull()
 
 private fun extractValidAmounts(blocks: List<OcrBlock>, imageHeight: Int, startFraction: Double = 0.0, endFraction: Double = 1.0): List<Double> {
-    val candidates = mutableListOf<Double>()
-    val amountRegex = Regex("""(?:₹|Rs\.?|INR)\s*([0-9]{1,3}(?:,[0-9]{3})*|[0-9]+)""", RegexOption.IGNORE_CASE)
-
-    for (block in blocks) {
-        val yCenter = (block.top + block.bottom) / 2.0
-        val fraction = if (imageHeight > 0) yCenter / imageHeight.toDouble() else 0.5
-        if (fraction in startFraction..endFraction) {
-            var text = block.text
-
-            val hasTimestamp = Regex("""\d{1,2}:\d{2}\s*(?:am|pm|AM|PM)""").containsMatchIn(text) || Regex("""\d{1,2}/\d{1,2}/\d{2,4}""").containsMatchIn(text) || Regex("""\d{1,2}\s+[a-zA-Z]{3,}\s+\d{4}""").containsMatchIn(text)
-            if (!hasTimestamp) {
-                text = text.replace(Regex("""\bT(?=\s*\d)"""), "₹")
-            }
-
-            val normalizedForAmount = text.replace(",", "").replace(" ", "").replace("\n", "")
-            
-            for (match in amountRegex.findAll(normalizedForAmount)) {
-                val raw = match.groupValues[1]
-                if (raw.length < 10) { 
-                    val parsed = raw.toDoubleOrNull()
-                    if (parsed != null) {
-                        candidates.add(parsed)
-                    }
-                }
-            }
-        }
-    }
-    return candidates
+    return ReceiptAmountExtractor.extractFromBlocks(
+        blocks = blocks,
+        imageHeight = imageHeight,
+        minFraction = startFraction,
+        maxFraction = endFraction
+    ).map { it.amount }
 }
 
-private fun extractMerchant(lines: List<OcrLine>, keywordRegex: Regex): String? {
-    for (i in lines.indices) {
-        if (keywordRegex.containsMatchIn(lines[i].text)) {
-            val match = keywordRegex.find(lines[i].text)
-            if (match != null) {
-                val afterKeyword = lines[i].text.substring(match.range.last + 1).trim()
-                if (afterKeyword.length > 2) {
-                    return cleanMerchant(afterKeyword)
-                }
-            }
-            if (i + 1 < lines.size) {
-                val nextLine = lines[i + 1].text.trim()
-                if (!nextLine.contains("₹") && nextLine.length > 2) {
-                    return cleanMerchant(nextLine)
-                }
-            }
-        }
-    }
-    return null
-}
-
-private fun cleanMerchant(text: String): String {
-    var extracted = text
-    val phoneIdx = extracted.indexOfFirst { it.isDigit() || it == '+' }
-    if (phoneIdx != -1) extracted = extracted.substring(0, phoneIdx)
-    val upiIdx = extracted.indexOf('@')
-    if (upiIdx != -1) extracted = extracted.substring(0, upiIdx)
-    return extracted.trim()
-}
+private fun extractMerchant(lines: List<OcrLine>, keywordRegex: Regex): String? =
+    ReceiptMerchantExtractor.afterKeyword(lines, keywordRegex)
 
 class GPayParser : ReceiptParser {
     override val app = ReceiptApp.GPAY
@@ -206,7 +134,7 @@ class CredParser : ReceiptParser {
         val amounts = extractValidAmounts(blocks, imageHeight, 0.0, 0.6)
         val amount = amounts.maxOrNull()
 
-        val merchant = extractMerchant(lines, Regex("""\bpaid\b""", RegexOption.IGNORE_CASE))
+        val merchant = ReceiptMerchantExtractor.lineAboveCredFooter(lines)
 
         return ParsedReceipt(
             amount = amount,

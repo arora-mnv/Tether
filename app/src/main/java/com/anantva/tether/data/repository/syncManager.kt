@@ -4,6 +4,7 @@ import android.util.Log
 import com.anantva.tether.data.local.dao.CategoryCorrectionDao
 import com.anantva.tether.data.local.dao.TransactionDao
 import com.anantva.tether.data.local.dao.GoalDao
+import com.anantva.tether.data.local.dao.MerchantPatternDao
 import com.anantva.tether.data.local.dao.UserProfileDao
 import com.anantva.tether.data.local.entity.TransactionEntity
 import com.anantva.tether.data.local.entity.UserProfileEntity
@@ -32,14 +33,11 @@ class SyncManager @Inject constructor(
     private val goalDao: GoalDao,
     private val userProfileDao: UserProfileDao,
     private val categoryCorrectionDao: CategoryCorrectionDao,
+    private val merchantPatternDao: MerchantPatternDao,
     private val firestoreRepository: FirestoreRepository,
     private val preferencesRepository: UserPreferencesRepository
 ) {
 
-    /**
-     * Full bidirectional reconciliation between Room and Firestore.
-     * Emits SyncResult states for UI progress indication.
-     */
     fun syncAll(uid: String): Flow<SyncResult> = flow {
         if (uid.isEmpty()) {
             emit(SyncResult.Error("User not signed in"))
@@ -85,6 +83,7 @@ class SyncManager @Inject constructor(
         emit(SyncResult.Syncing("Syncing category learning..."))
         try {
             syncCategoryCorrections(uid)
+            syncMerchantPatterns(uid)
         } catch (e: Exception) {
             Log.e(SYNC_TAG, "Category correction sync failed", e)
             emit(SyncResult.Error("Category learning sync failed: ${e.message}"))
@@ -106,21 +105,18 @@ class SyncManager @Inject constructor(
 
         val allIds = (localMap.keys + cloudMap.keys).toSet()
 
-        // Push local-only to cloud
         val localOnly = localMap.keys - cloudMap.keys
         Log.d(SYNC_TAG, "Transactions: ${localOnly.size} local-only, pushing to cloud")
         localOnly.forEach { id ->
             firestoreRepository.saveTransaction(uid, localMap[id]!!)
         }
 
-        // Pull cloud-only to local
         val cloudOnly = cloudMap.keys - localMap.keys
         Log.d(SYNC_TAG, "Transactions: ${cloudOnly.size} cloud-only, pulling to local")
         cloudOnly.forEach { id ->
             transactionDao.upsertTransaction(cloudMap[id]!!)
         }
 
-        // Conflict resolution: same ID exists in both, use more recent date
         val commonIds = localMap.keys.intersect(cloudMap.keys)
         Log.d(SYNC_TAG, "Transactions: ${commonIds.size} common IDs, checking for conflicts")
         commonIds.forEach { id ->
@@ -129,9 +125,18 @@ class SyncManager @Inject constructor(
             if (cloud.date > local.date) {
                 Log.d(SYNC_TAG, "Transaction $id: cloud is newer, pulling to local")
                 transactionDao.upsertTransaction(cloud)
-            } else {
-                Log.d(SYNC_TAG, "Transaction $id: local is newer or equal, pushing to cloud")
+            } else if (local.date > cloud.date) {
+                Log.d(SYNC_TAG, "Transaction $id: local is newer, pushing to cloud")
                 firestoreRepository.saveTransaction(uid, local)
+            } else if (cloud.amount != local.amount || cloud.category != local.category) {
+                Log.d(SYNC_TAG, "Transaction $id: same timestamp but different data, merging")
+                val merged = local.copy(
+                    amount = maxOf(local.amount, cloud.amount),
+                    category = if (local.category != "Other" && local.category.isNotBlank()) local.category else cloud.category,
+                    merchant = if (local.merchant.length >= cloud.merchant.length) local.merchant else cloud.merchant
+                )
+                transactionDao.upsertTransaction(merged)
+                firestoreRepository.saveTransaction(uid, merged)
             }
         }
 
@@ -149,21 +154,18 @@ class SyncManager @Inject constructor(
 
         val allIds = (localMap.keys + cloudMap.keys).toSet()
 
-        // Push local-only to cloud
         val localOnly = localMap.keys - cloudMap.keys
         Log.d(SYNC_TAG, "Goals: ${localOnly.size} local-only, pushing to cloud")
         localOnly.forEach { id ->
             firestoreRepository.saveGoal(uid, localMap[id]!!)
         }
 
-        // Pull cloud-only to local
         val cloudOnly = cloudMap.keys - localMap.keys
         Log.d(SYNC_TAG, "Goals: ${cloudOnly.size} cloud-only, pulling to local")
         cloudOnly.forEach { id ->
             goalDao.upsertGoal(cloudMap[id]!!)
         }
 
-        // Conflict resolution: use more recent startDate
         val commonIds = localMap.keys.intersect(cloudMap.keys)
         Log.d(SYNC_TAG, "Goals: ${commonIds.size} common IDs, checking for conflicts")
         commonIds.forEach { id ->
@@ -171,12 +173,58 @@ class SyncManager @Inject constructor(
             val cloud = cloudMap[id]!!
             if (cloud.startDate > local.startDate) {
                 goalDao.upsertGoal(cloud)
-            } else {
+            } else if (local.startDate > cloud.startDate) {
                 firestoreRepository.saveGoal(uid, local)
+            } else if (cloud.targetAmount != local.targetAmount || cloud.isActive != local.isActive) {
+                val merged = local.copy(
+                    targetAmount = maxOf(local.targetAmount, cloud.targetAmount),
+                    isActive = local.isActive || cloud.isActive
+                )
+                goalDao.upsertGoal(merged)
+                firestoreRepository.saveGoal(uid, merged)
             }
         }
 
         Log.d(SYNC_TAG, "Goal sync complete: ${allIds.size} total processed")
+
+        syncGoalContributions(uid, allIds)
+    }
+
+    private suspend fun syncGoalContributions(uid: String, goalIds: Set<Int>) {
+        val local = goalDao.getAllGoalContributions()
+        val localByKey = local.associateBy { it.goalId to contributionMonthKey(it.timestamp) }
+        val cloud = goalIds.flatMap { firestoreRepository.getGoalContributions(uid, it) }
+        val cloudByKey = cloud.associateBy { it.goalId to contributionMonthKey(it.timestamp) }
+        val allKeys = (localByKey.keys + cloudByKey.keys).toSet()
+
+        allKeys.forEach { key ->
+            val localContribution = localByKey[key]
+            val cloudContribution = cloudByKey[key]
+            when {
+                localContribution == null && cloudContribution != null -> {
+                    val range = contributionMonthRange(cloudContribution.timestamp)
+                    goalDao.deleteGoalContributionForMonth(cloudContribution.goalId, range.first, range.second)
+                    goalDao.insertGoalContribution(cloudContribution)
+                }
+                localContribution != null && cloudContribution == null -> {
+                    firestoreRepository.saveGoalContribution(uid, localContribution)
+                }
+                localContribution != null && cloudContribution != null -> {
+                    val winner = if (cloudContribution.timestamp > localContribution.timestamp) {
+                        cloudContribution
+                    } else {
+                        localContribution
+                    }
+                    val range = contributionMonthRange(winner.timestamp)
+                    goalDao.deleteGoalContributionForMonth(winner.goalId, range.first, range.second)
+                    val newId = goalDao.insertGoalContribution(winner)
+                    firestoreRepository.saveGoalContribution(uid, winner.copy(
+                        contributionId = if (newId > 0) newId.toInt() else winner.contributionId
+                    ))
+                }
+            }
+        }
+        Log.d(SYNC_TAG, "Goal contribution sync complete: ${allKeys.size} month entries")
     }
 
     // ── User Profile Sync ──
@@ -198,8 +246,20 @@ class SyncManager @Inject constructor(
             val profile = UserProfileEntity.fromMap(cloudProfile)
             userProfileDao.insertOrUpdateUser(profile)
         } else if (localProfile != null && cloudProfile != null) {
-            Log.d(SYNC_TAG, "Profile: both exist, keeping local, pushing to cloud")
-            firestoreRepository.saveUserProfileMap(uid, localProfile.toMap())
+            val cloudStreak = (cloudProfile["currentStreak"] as? Number)?.toInt() ?: 0
+            val localStreak = localProfile.currentStreak
+            if (cloudStreak > localStreak) {
+                Log.d(SYNC_TAG, "Profile: cloud has higher streak ($cloudStreak > $localStreak), merging")
+                val merged = UserProfileEntity.fromMap(cloudProfile).copy(
+                    currentBalance = localProfile.currentBalance,
+                    emergencyFundBalance = localProfile.emergencyFundBalance
+                )
+                userProfileDao.insertOrUpdateUser(merged)
+                firestoreRepository.saveUserProfileMap(uid, merged.toMap())
+            } else {
+                Log.d(SYNC_TAG, "Profile: both exist, keeping local, pushing to cloud")
+                firestoreRepository.saveUserProfileMap(uid, localProfile.toMap())
+            }
         }
     }
 
@@ -216,24 +276,34 @@ class SyncManager @Inject constructor(
         }
 
         val merged = cloudMap.toMutableMap()
+        var hasChanges = false
         localMap.forEach { (key, value) ->
             if (!merged.containsKey(key)) {
                 merged[key] = value
+                hasChanges = true
+            }
+        }
+
+        cloudMap.forEach { (key, value) ->
+            if (!localMap.containsKey(key)) {
+                hasChanges = true
             }
         }
 
         firestoreRepository.savePreferencesMap(uid, merged)
         preferencesRepository.applyMap(merged)
 
-        Log.d(SYNC_TAG, "Preferences sync complete")
+        Log.d(SYNC_TAG, "Preferences sync complete${if (hasChanges) " with changes" else ""}")
     }
 
-    /**
-     * Real-time Firestore snapshot listener for transactions.
-     * Fires on every Firestore change, enabling immediate Room upsert.
-     */
     fun observeTransactionsLive(uid: String): Flow<List<TransactionEntity>> =
         firestoreRepository.observeTransactions(uid)
+
+    fun observeGoalsLive(uid: String): Flow<List<com.anantva.tether.data.local.entity.GoalEntity>> =
+        firestoreRepository.observeGoals(uid)
+
+    fun observePreferencesLive(uid: String): Flow<Map<String, Any>?> =
+        firestoreRepository.observePreferencesMap(uid)
 
     private suspend fun syncCategoryCorrections(uid: String) {
         val localCorrections = categoryCorrectionDao.getAllCorrections()
@@ -262,5 +332,46 @@ class SyncManager @Inject constructor(
         }
 
         Log.d(SYNC_TAG, "Category correction sync complete")
+    }
+
+    private suspend fun syncMerchantPatterns(uid: String) {
+        val localPatterns = merchantPatternDao.getAllPatterns()
+        val cloudPatterns = firestoreRepository.getMerchantPatterns(uid)
+
+        val localMap = localPatterns.associateBy { it.normalizedMerchant }
+        val cloudMap = cloudPatterns.associateBy { it.normalizedMerchant }
+        val allKeys = (localMap.keys + cloudMap.keys).toSet()
+
+        allKeys.forEach { key ->
+            val local = localMap[key]
+            val cloud = cloudMap[key]
+            val winner = when {
+                local == null -> cloud
+                cloud == null -> local
+                local.lastUsedTimestamp >= cloud.lastUsedTimestamp -> local
+                else -> cloud
+            } ?: return@forEach
+            merchantPatternDao.upsertPattern(winner)
+            firestoreRepository.saveMerchantPattern(uid, winner)
+        }
+
+        Log.d(SYNC_TAG, "Merchant pattern sync complete: ${allKeys.size} total")
+    }
+
+    private fun contributionMonthKey(timestamp: Long): String {
+        val date = java.time.Instant.ofEpochMilli(timestamp)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDate()
+        return "${date.year}-${date.monthValue}"
+    }
+
+    private fun contributionMonthRange(timestamp: Long): Pair<Long, Long> {
+        val zone = java.time.ZoneId.systemDefault()
+        val month = java.time.YearMonth.from(
+            java.time.Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate()
+        )
+        val start = month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = month.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
+        return start to end
     }
 }

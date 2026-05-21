@@ -68,6 +68,15 @@ enum class OrbTier(val label: String) {
 
 enum class OrbMomentumState { ALIVE, COLLAPSING, DEAD, RECOVERING }
 
+enum class OrbEmotionalState { CALM, ACTIVE, TENSE, PANIC }
+
+data class OrbVitals(
+    val stressLevel: Float,
+    val bpm: Float,
+    val emotionalState: OrbEmotionalState,
+    val panicIntensity: Float
+)
+
 data class TierColors(
     val light1: Color, val light2: Color, val deep1: Color, val deep2: Color
 )
@@ -125,6 +134,24 @@ private fun lerpColor(a: Color, b: Color, t: Float): Color = Color(
 // HEART RATE MODEL
 // ──────────────────────────────────────────
 
+fun tetherOrbVitals(stressLevel: Float): OrbVitals {
+    val stress = stressLevel.coerceIn(0f, 1f)
+    val bpm = spendingRatioToBPM(stress)
+    val panic = ((stress - 0.90f) / 0.10f).coerceIn(0f, 1f)
+    val state = when {
+        stress >= 0.90f -> OrbEmotionalState.PANIC
+        stress >= 0.70f -> OrbEmotionalState.TENSE
+        stress >= 0.30f -> OrbEmotionalState.ACTIVE
+        else -> OrbEmotionalState.CALM
+    }
+    return OrbVitals(
+        stressLevel = stress,
+        bpm = bpm,
+        emotionalState = state,
+        panicIntensity = panic
+    )
+}
+
 private fun spendingRatioToBPM(ratio: Float): Float {
     val r = ratio.coerceIn(0f, 1f)
     return when {
@@ -150,7 +177,8 @@ fun TetherOrb(
     onCollapseComplete: () -> Unit = {},
     showText: Boolean = true
 ) {
-    val s = stressLevel.coerceIn(0f, 1f)
+    val vitals = remember(stressLevel) { tetherOrbVitals(stressLevel) }
+    val s = vitals.stressLevel
     val tier = remember(streakDays) { OrbTier.fromStreak(streakDays) }
     val tc = tierColorMap[tier] ?: tierColorMap[OrbTier.BRONZE]!!
 
@@ -166,7 +194,7 @@ fun TetherOrb(
     }
 
     // ── HEART RATE ──
-    val bpm = spendingRatioToBPM(s)
+    val bpm = vitals.bpm
     val pulseMs = (60000f / bpm).toInt().coerceIn(150, 2000)
 
     val trans = rememberInfiniteTransition(label = "orb")
@@ -226,7 +254,7 @@ fun TetherOrb(
     val driftY = sin(rawPhase * 0.42f + 1.7f) * driftIntensity * 0.60f
 
     // ── PANIC LAYER (≥90% stress) ──
-    val panicIntensity = ((s - 0.90f) / 0.10f).coerceIn(0f, 1f)
+    val panicIntensity = vitals.panicIntensity
 
     val panicHb by trans.animateFloat(
         initialValue = -1f, targetValue = 1f,

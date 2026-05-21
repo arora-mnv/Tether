@@ -61,6 +61,7 @@ class FirebaseAuthManager {
     }
 
     // 🔵 Configure Google Sign-In
+    @Suppress("DEPRECATION")
     private fun getGoogleClient(context: Context): GoogleSignInClient {
         if (!isGoogleSignInConfigured(context)) {
             throw IllegalStateException(
@@ -206,6 +207,7 @@ class FirebaseAuthManager {
         auth.signOut()
     }
 
+    @Suppress("DEPRECATION")
     fun signOutGoogle(context: Context) {
         try {
             // Use a minimal config; we just want to clear cached account selection.

@@ -30,11 +30,7 @@ data class UserData(
         get() = name?.takeIf { it.isNotBlank() } ?: "there"
 }
 
-data class UserUiState(
-    val profileImageUrl: String? = null,
-    val streak: Int = 0
-)
-
+// Removed old UserUiState here, it's now managed by SharedUserViewModel
 @Singleton
 class UserRepository @Inject constructor(
     private val authManager: FirebaseAuthManager,
@@ -44,21 +40,6 @@ class UserRepository @Inject constructor(
 
     private val _user = MutableStateFlow(UserData())
     val user: StateFlow<UserData?> = _user.asStateFlow()
-
-    val userUiState: StateFlow<UserUiState> = combine(
-        _user,
-        preferencesRepository.isCloudStorage,
-        preferencesRepository.streakDays
-    ) { user, cloud, streak ->
-        UserUiState(
-            profileImageUrl = if (cloud) user?.photoUrl else null,
-            streak = streak
-        )
-    }.stateIn(
-        scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = UserUiState()
-    )
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -87,7 +68,7 @@ class UserRepository @Inject constructor(
             var name: String? = null
             var phone: String? = null
             var email: String? = null
-            val photoUrl = authManager.getCurrentUserPhotoUrl()
+            var photoUrl = authManager.getCurrentUserPhotoUrl()
 
             // Try Firestore first
             try {
@@ -95,6 +76,9 @@ class UserRepository @Inject constructor(
                 if (profile != null) {
                     name = profile.name.takeIf { it.isNotBlank() }
                     phone = profile.phoneNumber.takeIf { it.isNotBlank() }
+                    if (photoUrl.isNullOrBlank()) {
+                        photoUrl = profile.photoUrl.takeIf { it.isNotBlank() }
+                    }
                     Log.d(TAG, "loadCurrentUser: loaded from Firestore name=$name phone=$phone")
                 }
             } catch (e: Exception) {
@@ -167,7 +151,12 @@ class UserRepository @Inject constructor(
             }
 
             try {
-                firestoreRepository.saveUserProfile(uid, newName.orEmpty(), newPhone.orEmpty())
+                firestoreRepository.saveUserProfile(
+                    uid,
+                    newName.orEmpty(),
+                    newPhone.orEmpty(),
+                    current.photoUrl.orEmpty()
+                )
                 Log.d(TAG, "saveUser: Firestore save success uid=$uid")
             } catch (e: Exception) {
                 Log.e(TAG, "saveUser: Firestore save failed: ${e.message}", e)

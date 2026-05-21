@@ -32,12 +32,13 @@ class RecurringDetectionEngine @Inject constructor() {
         category: String,
         history: List<TransactionEntity>
     ): DetectionResult {
-        if (merchant.isBlank() || amount <= 0) {
+        if (merchant.isBlank()) {
             return DetectionResult(false, 0f, RecurringType.OTHER)
         }
 
         val keywordResult = detectFromMerchantKeywords(merchant, category)
-        if (keywordResult.confidence >= HIGH_CONFIDENCE_THRESHOLD) return keywordResult
+
+        if (amount <= 0) return keywordResult
 
         val patternResult = detectFromHistory(merchant, amount, history)
         return when {
@@ -49,20 +50,39 @@ class RecurringDetectionEngine @Inject constructor() {
     private fun detectFromMerchantKeywords(merchant: String, category: String): DetectionResult {
         val normalized = SpendingCategories.normalizeMerchant(merchant)
         val type = RecurringType.infer(category, merchant)
+
+        val isEmiByAmount = category == SpendingCategories.EMI
+        val isSubscriptionKeyword = normalized.containsAny(
+            "netflix", "spotify", "prime video", "hotstar", "youtube premium",
+            "apple tv", "sony liv", "zee5", "jio", "kindle", "icloud",
+            "google one", "microsoft 365", "canva", "notion"
+        )
+        val isBillKeyword = normalized.containsAny(
+            "electricity", "water", "gas", "broadband", "wifi", "internet",
+            "postpaid", "mobile recharge", "vodafone", "airtel", "bsnl",
+            "maintenance", "property tax"
+        )
+        val isEmiKeyword = normalized.containsAny(
+            "tata capital", "bajaj finance", "emi", "loan repayment",
+            "hdfc loan", "icici loan", "sbi loan", "axis loan"
+        )
+        val isRentKeyword = normalized.containsAny("rent", "house rent", "housing")
+        val isInsuranceKeyword = normalized.containsAny(
+            "lic ", "life insurance", "policy premium", "health insurance",
+            "reliance general", "car insurance", "bike insurance", "term plan"
+        )
+
         val matched = when {
             type != RecurringType.OTHER -> true
-            normalized.containsAny(
-                "netflix", "spotify", "prime video", "hotstar", "youtube premium",
-                "tata capital", "bajaj finance", "electricity board", "bescom", "mseb",
-                "reliance general", "lic ", "policy premium", "rent payment"
-            ) -> true
+            isSubscriptionKeyword || isBillKeyword || isEmiKeyword || isRentKeyword || isInsuranceKeyword -> true
             else -> false
         }
         if (!matched) return DetectionResult(false, 0f, RecurringType.OTHER)
 
         val confidence = when (type) {
-            RecurringType.EMI, RecurringType.RENT, RecurringType.SIP, RecurringType.INSURANCE -> 0.92f
-            RecurringType.SUBSCRIPTION, RecurringType.BILL -> 0.88f
+            RecurringType.EMI, RecurringType.RENT, RecurringType.SIP, RecurringType.INSURANCE -> 0.95f
+            RecurringType.SUBSCRIPTION, RecurringType.BILL -> 0.90f
+            RecurringType.SALARY -> 0.92f
             else -> 0.75f
         }
         return DetectionResult(
@@ -103,9 +123,11 @@ class RecurringDetectionEngine @Inject constructor() {
 
         val monthlyHits = intervals.count { it in MONTHLY_INTERVAL_MIN..MONTHLY_INTERVAL_MAX }
         val weeklyHits = intervals.count { it in WEEKLY_INTERVAL_MIN..WEEKLY_INTERVAL_MAX }
+        val yearlyHits = intervals.count { it in YEARLY_INTERVAL_MIN..YEARLY_INTERVAL_MAX }
         val cadenceScore = when {
-            monthlyHits >= intervals.size / 2 -> 0.9f
-            weeklyHits >= intervals.size / 2 -> 0.75f
+            monthlyHits >= intervals.size / 2 -> 0.92f
+            weeklyHits >= intervals.size / 2 -> 0.78f
+            yearlyHits >= intervals.size / 2 -> 0.95f
             intervals.average() in MONTHLY_INTERVAL_MIN.toDouble()..MONTHLY_INTERVAL_MAX.toDouble() -> 0.7f
             else -> 0.4f
         }
@@ -137,7 +159,7 @@ class RecurringDetectionEngine @Inject constructor() {
         if (a == b) return true
         val shorter = if (a.length < b.length) a else b
         val longer = if (a.length < b.length) b else a
-        return longer.contains(shorter) && shorter.length >= 4
+        return longer.contains(shorter) && shorter.length >= 3
     }
 
     private fun amountsSimilar(existing: Double, candidate: Double): Boolean {
@@ -159,5 +181,7 @@ class RecurringDetectionEngine @Inject constructor() {
         private const val MONTHLY_INTERVAL_MAX = 35
         private const val WEEKLY_INTERVAL_MIN = 6
         private const val WEEKLY_INTERVAL_MAX = 8
+        private const val YEARLY_INTERVAL_MIN = 360
+        private const val YEARLY_INTERVAL_MAX = 370
     }
 }

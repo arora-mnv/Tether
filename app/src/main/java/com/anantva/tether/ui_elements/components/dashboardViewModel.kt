@@ -4,20 +4,24 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.anantva.tether.calculator.use_case.CalculateDailyLimitUseCase
 import com.anantva.tether.data.local.UserPreferencesRepository
+import com.anantva.tether.data.local.entity.GoalContributionEntity
 import com.anantva.tether.data.repository.FirestoreRepository
 import com.anantva.tether.data.repository.TetherRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
+import kotlin.math.ceil
 import javax.inject.Inject
 
 data class DashboardUiState(
@@ -36,7 +40,9 @@ data class DashboardUiState(
     val projectedCompletionDate: String = "",
     val goalProgressPct: Float = 0f,
     val goalRemainingAmount: Int = 0,
-    val isGoalCompleted: Boolean = false
+    val isGoalCompleted: Boolean = false,
+    val goalSavedAmount: Int = 0,
+    val hasSavedCurrentMonth: Boolean = false
 )
 
 @HiltViewModel
@@ -49,7 +55,6 @@ class DashboardViewModel @Inject constructor(
 ) : ViewModel() {
 
     val user = userRepository.user
-    val userUiState = userRepository.userUiState
 
     private val today = LocalDate.now()
     private val zone  = ZoneId.systemDefault()
@@ -61,8 +66,10 @@ class DashboardViewModel @Inject constructor(
         startOfToday + 24L * 60 * 60 * 1000 - 1
 
     init {
+        migrateLegacySavedCommitment()
         checkAndUpdateStreak()
         watchOverLimit()
+        ensureMonthlyGoalContribution()
         viewModelScope.launch {
             firestoreRepository.testFirestoreWrite()
         }
@@ -113,11 +120,24 @@ class DashboardViewModel @Inject constructor(
             )
         }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val activeGoalWithContributions =
+        tetherRepository.getActiveGoal().flatMapLatest { activeGoal ->
+            if (activeGoal == null || activeGoal.goalId <= 0) {
+                flowOf(activeGoal to emptyList<GoalContributionEntity>())
+            } else {
+                tetherRepository.getGoalContributions(activeGoal.goalId).map { contributions ->
+                    activeGoal to contributions
+                }
+            }
+        }
+
     val uiState: StateFlow<DashboardUiState> =
         combine(
             baseInputs,
-            tetherRepository.getActiveGoal()
-        ) { base, activeGoal ->
+            activeGoalWithContributions
+        ) { base, goalAndContributions ->
+            val (activeGoal, contributions) = goalAndContributions
             val dailyLimitResult = calculateDailyLimit(
                 currentBalance = base.balance,
                 monthlyCommitment = base.monthlyCommitment,
@@ -125,31 +145,35 @@ class DashboardViewModel @Inject constructor(
                 currentDate = today
             )
 
-            val monthsToGoal = if (base.monthlyCommitment > 0 && base.goal > 0) {
-                (base.goal / base.monthlyCommitment).coerceAtLeast(1)
-            } else 0
+            val savedSoFar = contributions.sumOf { it.amount }
+            val monthRange = monthRange(today)
+            val hasSavedCurrentMonth = contributions.any {
+                it.timestamp in monthRange.first..monthRange.second
+            }
+
+            val targetAmount = activeGoal?.targetAmount ?: base.goal.toDouble()
+            val remaining = (targetAmount - savedSoFar).coerceAtLeast(0.0).toInt()
+            val completed = activeGoal != null && targetAmount > 0.0 && remaining <= 0
+            val progressPct = if (targetAmount > 0.0) {
+                (savedSoFar.toFloat() / targetAmount.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            val monthsToGoal = if (base.monthlyCommitment > 0 && remaining > 0) {
+                ceil(remaining / base.monthlyCommitment.toDouble()).toInt().coerceAtLeast(1)
+            } else {
+                0
+            }
 
             val projectedDate = if (monthsToGoal > 0) {
                 val completionMonth = YearMonth.now().plusMonths(monthsToGoal.toLong())
                 "${completionMonth.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${completionMonth.year}"
             } else ""
 
-            val (progressPct, remaining, completed) =
-                if (activeGoal != null && activeGoal.targetAmount > 0 && base.monthlyCommitment > 0) {
-                    val start = Instant.ofEpochMilli(activeGoal.startDate).atZone(zone).toLocalDate()
-                    val monthsElapsed = ChronoUnit.MONTHS.between(YearMonth.from(start), YearMonth.from(today)).coerceAtLeast(0)
-                    val savedMonths = monthsElapsed + if (base.hasSavedCommitment) 1 else 0
-                    val savedSoFar = savedMonths * base.monthlyCommitment
-                    val remainingAmount = (activeGoal.targetAmount - savedSoFar).coerceAtLeast(0.0).toInt()
-                    val pct = (savedSoFar.toFloat() / activeGoal.targetAmount.toFloat()).coerceIn(0f, 1f)
-                    Triple(pct, remainingAmount, remainingAmount <= 0)
-                } else {
-                    Triple(0f, 0, false)
-                }
-
-            if (completed && activeGoal != null && completedGoalId != activeGoal.goalId) {
-                completedGoalId = activeGoal.goalId
-                viewModelScope.launch { tetherRepository.completeGoal(activeGoal.goalId) }
+            val completedGoal = activeGoal?.takeIf { completed }
+            if (completedGoal != null && completedGoalId != completedGoal.goalId) {
+                completedGoalId = completedGoal.goalId
+                viewModelScope.launch { tetherRepository.completeGoal(completedGoal.goalId) }
             }
 
             val streakLevel = when {
@@ -183,7 +207,9 @@ class DashboardViewModel @Inject constructor(
                 projectedCompletionDate = projectedDate,
                 goalProgressPct         = progressPct,
                 goalRemainingAmount     = remaining,
-                isGoalCompleted         = completed
+                isGoalCompleted         = completed,
+                goalSavedAmount         = savedSoFar.toInt(),
+                hasSavedCurrentMonth    = hasSavedCurrentMonth
             )
         }.stateIn(
             scope        = viewModelScope,
@@ -267,6 +293,74 @@ class DashboardViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun ensureMonthlyGoalContribution() {
+        viewModelScope.launch {
+            try {
+                tetherRepository.ensureMonthlyContribution()
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun markCurrentMonthSaved() {
+        viewModelScope.launch {
+            val activeGoal = tetherRepository.getActiveGoal().first() ?: return@launch
+            val amount = preferencesRepository.monthlyCommitment.first().toDoubleOrNull() ?: return@launch
+            val range = monthRange(today)
+            tetherRepository.replaceGoalContributionForMonth(
+                goalId = activeGoal.goalId,
+                amount = amount,
+                timestamp = System.currentTimeMillis(),
+                startOfMonth = range.first,
+                endOfMonth = range.second
+            )
+        }
+    }
+
+    fun undoCurrentMonthContribution() {
+        viewModelScope.launch {
+            val activeGoal = tetherRepository.getActiveGoal().first() ?: return@launch
+            val range = monthRange(today)
+            tetherRepository.deleteGoalContributionForMonth(activeGoal.goalId, range.first, range.second)
+        }
+    }
+
+    private fun migrateLegacySavedCommitment() {
+        viewModelScope.launch {
+            if (!preferencesRepository.hasSavedCommitment.first()) return@launch
+            val activeGoal = tetherRepository.getActiveGoal().first() ?: return@launch
+            val amount = preferencesRepository.monthlyCommitment.first().toDoubleOrNull() ?: return@launch
+            val range = monthRange(today)
+            val alreadyMigrated = tetherRepository.getGoalContributions(activeGoal.goalId)
+                .first()
+                .any { it.timestamp in range.first..range.second }
+            if (!alreadyMigrated && amount > 0.0) {
+                tetherRepository.replaceGoalContributionForMonth(
+                    goalId = activeGoal.goalId,
+                    amount = amount,
+                    timestamp = System.currentTimeMillis(),
+                    startOfMonth = range.first,
+                    endOfMonth = range.second
+                )
+            }
+            preferencesRepository.setHasSavedCommitment(false)
+        }
+    }
+
+    private fun monthRange(date: LocalDate): Pair<Long, Long> {
+        val start = YearMonth.from(date)
+            .atDay(1)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli()
+        val end = YearMonth.from(date)
+            .plusMonths(1)
+            .atDay(1)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli() - 1
+        return start to end
     }
 
     // DEBUG ONLY — REMOVE BEFORE RELEASE

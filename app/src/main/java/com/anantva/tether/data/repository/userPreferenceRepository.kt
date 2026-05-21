@@ -180,6 +180,7 @@ class UserPreferencesRepository @Inject constructor(
             prefs[PreferencesKeys.USER_PHONE]?.let { put("userPhone", it) }
             prefs[PreferencesKeys.STREAK_DAYS]?.let { put("streakDays", it) }
             prefs[PreferencesKeys.LAST_STREAK_CHECK]?.let { put("lastStreakCheckDate", it) }
+            prefs[PreferencesKeys.LAST_STREAK_UPDATE]?.let { put("lastStreakUpdateDate", it) }
         }
     }
 
@@ -197,8 +198,9 @@ class UserPreferencesRepository @Inject constructor(
             (map["userName"] as? String)?.let { prefs[PreferencesKeys.USER_NAME] = it }
             (map["userEmail"] as? String)?.let { prefs[PreferencesKeys.USER_EMAIL] = it }
             (map["userPhone"] as? String)?.let { prefs[PreferencesKeys.USER_PHONE] = it }
-            (map["streakDays"] as? Int)?.let { prefs[PreferencesKeys.STREAK_DAYS] = it }
-            (map["lastStreakCheckDate"] as? Long)?.let { prefs[PreferencesKeys.LAST_STREAK_CHECK] = it }
+            (map["streakDays"] as? Number)?.let { prefs[PreferencesKeys.STREAK_DAYS] = it.toInt() }
+            (map["lastStreakCheckDate"] as? Number)?.let { prefs[PreferencesKeys.LAST_STREAK_CHECK] = it.toLong() }
+            (map["lastStreakUpdateDate"] as? String)?.let { prefs[PreferencesKeys.LAST_STREAK_UPDATE] = it }
         }
     }
 }

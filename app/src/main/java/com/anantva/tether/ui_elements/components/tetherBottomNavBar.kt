@@ -81,6 +81,7 @@ private val navItems = listOf(
     NavItem(NavDestination.Settings, "Settings", Icons.Outlined.Settings,            Icons.Filled.Settings),
     NavItem(NavDestination.Insights, "Insights", Icons.Outlined.Lightbulb,            Icons.Filled.Lightbulb),
     NavItem(NavDestination.Vault,    "Vault",    Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
+    @Suppress("DEPRECATION")
     NavItem(NavDestination.Growth,   "Growth",   Icons.Outlined.TrendingUp,           Icons.Filled.TrendingUp)
 )
 

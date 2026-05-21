@@ -10,6 +10,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
@@ -114,6 +115,30 @@ class SetupViewModel @Inject constructor(
                         isActive = true
                     )
                 )
+                if (_hasSavedCommitment.value) {
+                    val activeGoal = tetherRepository.getActiveGoal().first()
+                    if (activeGoal != null) {
+                        val startOfMonth = YearMonth.from(today)
+                            .atDay(1)
+                            .atStartOfDay(zone)
+                            .toInstant()
+                            .toEpochMilli()
+                        val endOfMonth = YearMonth.from(today)
+                            .plusMonths(1)
+                            .atDay(1)
+                            .atStartOfDay(zone)
+                            .toInstant()
+                            .toEpochMilli() - 1
+                        tetherRepository.replaceGoalContributionForMonth(
+                            goalId = activeGoal.goalId,
+                            amount = commitment,
+                            timestamp = System.currentTimeMillis(),
+                            startOfMonth = startOfMonth,
+                            endOfMonth = endOfMonth
+                        )
+                        preferencesRepository.setHasSavedCommitment(false)
+                    }
+                }
             }
 
             _setupComplete.value = true
