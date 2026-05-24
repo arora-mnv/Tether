@@ -5,6 +5,12 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+enum class ContributionSyncStatus {
+    SYNCED,
+    PENDING_SYNC,
+    FAILED_SYNC
+}
+
 @Entity(
     tableName = "goal_contributions",
     foreignKeys = [
@@ -22,13 +28,17 @@ data class GoalContributionEntity(
     val contributionId: Int = 0,
     val goalId: Int,
     val amount: Double,
-    val timestamp: Long
+    val timestamp: Long,
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val syncStatus: ContributionSyncStatus = ContributionSyncStatus.PENDING_SYNC
 ) {
     fun toMap(): Map<String, Any> = mapOf(
         "contributionId" to contributionId,
         "goalId" to goalId,
         "amount" to amount,
-        "timestamp" to timestamp
+        "timestamp" to timestamp,
+        "lastUpdated" to lastUpdated,
+        "syncStatus" to syncStatus.name
     )
 
     companion object {
@@ -37,7 +47,14 @@ data class GoalContributionEntity(
                 contributionId = (data["contributionId"] as? Number)?.toInt() ?: 0,
                 goalId = (data["goalId"] as? Number)?.toInt() ?: 0,
                 amount = (data["amount"] as? Number)?.toDouble() ?: 0.0,
-                timestamp = (data["timestamp"] as? Number)?.toLong() ?: 0L
+                timestamp = (data["timestamp"] as? Number)?.toLong() ?: 0L,
+                lastUpdated = (data["lastUpdated"] as? Number)?.toLong() ?: 0L,
+                syncStatus = try {
+                    (data["syncStatus"] as? String)?.let { ContributionSyncStatus.valueOf(it) }
+                        ?: ContributionSyncStatus.PENDING_SYNC
+                } catch (_: Exception) {
+                    ContributionSyncStatus.PENDING_SYNC
+                }
             )
         }
     }

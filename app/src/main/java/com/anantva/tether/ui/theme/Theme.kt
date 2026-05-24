@@ -28,6 +28,7 @@ fun TetherTheme(
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = DarkBg.toArgb()
+            window.navigationBarColor = DarkBg.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
         }
     }

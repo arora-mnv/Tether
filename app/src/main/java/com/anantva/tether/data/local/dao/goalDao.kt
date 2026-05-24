@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import com.anantva.tether.data.local.entity.ContributionSyncStatus
 import com.anantva.tether.data.local.entity.GoalEntity
 import com.anantva.tether.data.local.entity.GoalContributionEntity
 import kotlinx.coroutines.flow.Flow
@@ -14,11 +15,9 @@ interface GoalDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGoal(goal: GoalEntity): Long
 
-    // The Dashboard needs to know the active goal to calculate the Daily Limit
     @Query("SELECT * FROM goals WHERE isActive = 1 LIMIT 1")
     fun getActiveGoal(): Flow<GoalEntity?>
 
-    // When a goal is finished (balloon pops), we deactivate it
     @Query("UPDATE goals SET isActive = 0 WHERE goalId = :goalId")
     suspend fun markGoalAsCompleted(goalId: Int)
 
@@ -51,4 +50,16 @@ interface GoalDao {
 
     @Query("SELECT SUM(amount) FROM goal_contributions WHERE goalId = :goalId")
     fun getTotalContributions(goalId: Int): Flow<Double?>
+
+    @Query("SELECT * FROM goal_contributions WHERE syncStatus = :syncStatus ORDER BY lastUpdated ASC")
+    suspend fun getContributionsBySyncStatus(syncStatus: ContributionSyncStatus): List<GoalContributionEntity>
+
+    @Query("UPDATE goal_contributions SET syncStatus = :syncStatus WHERE contributionId = :contributionId")
+    suspend fun updateContributionSyncStatus(contributionId: Int, syncStatus: ContributionSyncStatus)
+
+    @Query("UPDATE goal_contributions SET syncStatus = :syncStatus, lastUpdated = :lastUpdated WHERE contributionId = :contributionId")
+    suspend fun updateContributionSyncStatusAndTimestamp(contributionId: Int, syncStatus: ContributionSyncStatus, lastUpdated: Long)
+
+    @Query("SELECT * FROM goal_contributions WHERE goalId = :goalId AND syncStatus != :status")
+    suspend fun getContributionsNotInSyncStatus(goalId: Int, status: ContributionSyncStatus): List<GoalContributionEntity>
 }

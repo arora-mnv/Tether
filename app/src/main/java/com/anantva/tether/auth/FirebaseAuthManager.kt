@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 
 class FirebaseAuthManager {
 
-    private val auth = FirebaseAuth.getInstance()
+    private val auth by lazy { FirebaseAuth.getInstance() }
     private var phoneCallback: PhoneAuthProvider.OnVerificationStateChangedCallbacks? = null
 
     /**

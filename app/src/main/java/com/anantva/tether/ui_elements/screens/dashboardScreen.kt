@@ -36,7 +36,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.TrendingUp
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -105,7 +104,8 @@ fun DashboardScreen(
     pendingListViewModel: PendingTransactionsViewModel = hiltViewModel(),
     insightsViewModel: InsightsViewModel = hiltViewModel(),
     receiptImportViewModel: com.anantva.tether.ui_elements.screens.ReceiptImportViewModel = hiltViewModel(),
-    sharedUserViewModel: com.anantva.tether.ui_elements.components.SharedUserViewModel = hiltViewModel()
+    sharedUserViewModel: com.anantva.tether.ui_elements.components.SharedUserViewModel = hiltViewModel(),
+    onNavigateToPersonalityDetail: () -> Unit = {}
 ) {
     val uiState         by viewModel.uiState.collectAsState()
     val pendingState    by pendingViewModel.uiState.collectAsState()
@@ -249,14 +249,6 @@ fun DashboardScreen(
             )
         }
     ) { innerPadding ->
-        if (uiState.isLoading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = TetherRed)
-            }
-            return@Scaffold
-        }
-
-        // ✅ Crossfade between Home content and sub-screens
         Crossfade(
             targetState   = selectedDestination,
             animationSpec = tween(300),
@@ -283,7 +275,8 @@ fun DashboardScreen(
                     spendTrendValues = spendTrendValues,
                     trendLabels = trendLabels,
                     uiState = uiState,
-                    onRefresh = { insightsViewModel.refresh() }
+                    onRefresh = { insightsViewModel.refresh() },
+                    onPersonalityClick = onNavigateToPersonalityDetail
                 )
                 is TetherNav.Settings -> SettingsScreen(innerPadding = innerPadding)
                 is TetherNav.Vault    -> VaultScreen(innerPadding = innerPadding)

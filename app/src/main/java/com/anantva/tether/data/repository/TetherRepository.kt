@@ -8,6 +8,7 @@ import com.anantva.tether.data.local.dao.GoalDao
 import com.anantva.tether.data.local.dao.TransactionDao
 import com.anantva.tether.data.local.dao.TransactionPagingSource
 import com.anantva.tether.data.local.dao.UserProfileDao
+import com.anantva.tether.data.local.entity.ContributionSyncStatus
 import com.anantva.tether.data.local.entity.GoalContributionEntity
 import com.anantva.tether.data.local.entity.GoalEntity
 import com.anantva.tether.data.local.entity.RecurringType
@@ -395,14 +396,19 @@ class TetherRepository(
         startOfMonth: Long,
         endOfMonth: Long
     ): Boolean {
+        val now = System.currentTimeMillis()
         goalDao.deleteGoalContributionForMonth(goalId, startOfMonth, endOfMonth)
-        goalDao.insertGoalContribution(
+        val newId = goalDao.insertGoalContribution(
             GoalContributionEntity(
                 goalId = goalId,
                 amount = amount,
-                timestamp = System.currentTimeMillis()
+                timestamp = now,
+                lastUpdated = now,
+                syncStatus = ContributionSyncStatus.PENDING_SYNC
             )
         )
+        Log.d(TAG, "replaceGoalContributionForMonth: local write OK, id=$newId goalId=$goalId amount=$amount")
+
         if (isCloud() && uid().isNotEmpty()) {
             val uid = uid()
             try {
@@ -418,10 +424,26 @@ class TetherRepository(
                     mapOf(
                         "goalId" to goalId,
                         "amount" to amount,
-                        "timestamp" to System.currentTimeMillis()
+                        "timestamp" to now,
+                        "lastUpdated" to now,
+                        "syncStatus" to ContributionSyncStatus.SYNCED.name
                     )
                 ).await()
-            } catch (_: Exception) { }
+                if (newId > 0) {
+                    goalDao.updateContributionSyncStatusAndTimestamp(
+                        newId.toInt(), ContributionSyncStatus.SYNCED, now
+                    )
+                }
+                Log.d(TAG, "replaceGoalContributionForMonth: Firestore write OK, id=$newId")
+            } catch (e: Exception) {
+                Log.e(TAG, "replaceGoalContributionForMonth: Firestore write FAILED for goalId=$goalId", e)
+            }
+        } else {
+            if (newId > 0) {
+                goalDao.updateContributionSyncStatusAndTimestamp(
+                    newId.toInt(), ContributionSyncStatus.SYNCED, now
+                )
+            }
         }
         return true
     }
@@ -431,7 +453,10 @@ class TetherRepository(
         startOfMonth: Long,
         endOfMonth: Long
     ) {
+        val now = System.currentTimeMillis()
         goalDao.deleteGoalContributionForMonth(goalId, startOfMonth, endOfMonth)
+        Log.d(TAG, "deleteGoalContributionForMonth: local delete OK goalId=$goalId")
+
         if (isCloud() && uid().isNotEmpty()) {
             try {
                 val contributionsRef = userDoc(uid()).collection("goals")
@@ -441,7 +466,67 @@ class TetherRepository(
                     .whereLessThanOrEqualTo("timestamp", endOfMonth)
                     .get().await()
                 existing.documents.forEach { it.reference.delete().await() }
-            } catch (_: Exception) { }
+                Log.d(TAG, "deleteGoalContributionForMonth: Firestore delete OK goalId=$goalId docs=${existing.documents.size}")
+            } catch (e: Exception) {
+                Log.e(TAG, "deleteGoalContributionForMonth: Firestore delete FAILED for goalId=$goalId", e)
+            }
+        }
+    }
+
+    suspend fun retryPendingContributionSyncs(): Int {
+        if (!isCloud() || uid().isEmpty()) return 0
+        val uid = uid()
+        val pending = goalDao.getContributionsBySyncStatus(ContributionSyncStatus.PENDING_SYNC)
+        var synced = 0
+        for (contribution in pending) {
+            try {
+                val goalDoc = userDoc(uid).collection("goals")
+                    .document(contribution.goalId.toString())
+                val contributionsRef = goalDoc.collection("contributions")
+                val range = contributionMonthRange(contribution.timestamp)
+                val existing = contributionsRef
+                    .whereGreaterThanOrEqualTo("timestamp", range.first)
+                    .whereLessThanOrEqualTo("timestamp", range.second)
+                    .get().await()
+                existing.documents.forEach { it.reference.delete().await() }
+                contributionsRef.add(contribution.toMap()).await()
+                goalDao.updateContributionSyncStatus(
+                    contribution.contributionId, ContributionSyncStatus.SYNCED
+                )
+                synced++
+                Log.d(TAG, "retryPendingContributionSyncs: synced id=${contribution.contributionId}")
+            } catch (e: Exception) {
+                Log.e(TAG, "retryPendingContributionSyncs: failed for id=${contribution.contributionId}", e)
+            }
+        }
+        if (synced > 0) Log.d(TAG, "retryPendingContributionSyncs: synced $synced/${pending.size}")
+        return synced
+    }
+
+    suspend fun reconcileContributionFromCloud(
+        goalId: Int,
+        cloudContribution: GoalContributionEntity,
+        startOfMonth: Long,
+        endOfMonth: Long
+    ) {
+        val localContributions = goalDao.getGoalContributions(goalId).first()
+        val localForMonth = localContributions.filter {
+            it.timestamp in startOfMonth..endOfMonth
+        }
+
+        if (localForMonth.isEmpty()) {
+            goalDao.insertGoalContribution(cloudContribution.copy(syncStatus = ContributionSyncStatus.SYNCED))
+            Log.d(TAG, "reconcileContributionFromCloud: inserted cloud contribution for goalId=$goalId")
+            return
+        }
+
+        val latestLocal = localForMonth.maxByOrNull { it.lastUpdated }!!
+        if (cloudContribution.lastUpdated > latestLocal.lastUpdated) {
+            goalDao.deleteGoalContributionForMonth(goalId, startOfMonth, endOfMonth)
+            goalDao.insertGoalContribution(cloudContribution.copy(syncStatus = ContributionSyncStatus.SYNCED))
+            Log.d(TAG, "reconcileContributionFromCloud: cloud newer, replaced local for goalId=$goalId")
+        } else {
+            Log.d(TAG, "reconcileContributionFromCloud: local newer or equal, keeping local for goalId=$goalId")
         }
     }
 
@@ -531,5 +616,15 @@ class TetherRepository(
         } catch (e: Exception) {
             false
         }
+    }
+
+    private fun contributionMonthRange(timestamp: Long): Pair<Long, Long> {
+        val zone = java.time.ZoneId.systemDefault()
+        val month = java.time.YearMonth.from(
+            java.time.Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate()
+        )
+        val start = month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = month.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
+        return start to end
     }
 }

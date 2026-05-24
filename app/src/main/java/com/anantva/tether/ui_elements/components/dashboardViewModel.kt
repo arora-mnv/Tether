@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.anantva.tether.calculator.use_case.CalculateDailyLimitUseCase
 import com.anantva.tether.data.local.UserPreferencesRepository
 import com.anantva.tether.data.local.entity.GoalContributionEntity
-import com.anantva.tether.data.repository.FirestoreRepository
 import com.anantva.tether.data.repository.TetherRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -50,8 +49,7 @@ class DashboardViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val tetherRepository: TetherRepository,
     private val calculateDailyLimit: CalculateDailyLimitUseCase,
-    private val userRepository: com.anantva.tether.data.repository.UserRepository,
-    private val firestoreRepository: FirestoreRepository
+    private val userRepository: com.anantva.tether.data.repository.UserRepository
 ) : ViewModel() {
 
     val user = userRepository.user
@@ -70,16 +68,12 @@ class DashboardViewModel @Inject constructor(
         checkAndUpdateStreak()
         watchOverLimit()
         ensureMonthlyGoalContribution()
-        viewModelScope.launch {
-            firestoreRepository.testFirestoreWrite()
-        }
     }
 
     private data class BaseInputs(
         val balance: Int,
         val goal: Int,
         val monthlyCommitment: Int,
-        val hasSavedCommitment: Boolean,
         val streakDays: Int,
         val dailyExpenseSpent: Int
     )
@@ -89,17 +83,16 @@ class DashboardViewModel @Inject constructor(
             preferencesRepository.currentBalance,
             preferencesRepository.savingsGoal,
             preferencesRepository.monthlyCommitment,
-            preferencesRepository.hasSavedCommitment,
             preferencesRepository.streakDays
-        ) { balanceStr, goalStr, commitmentStr, hasSavedCommitment, streakDays ->
+        ) { balanceStr, goalStr, commitmentStr, streakDays ->
             Triple(
                 Triple(
                     balanceStr.toIntOrNull() ?: 0,
                     goalStr.toIntOrNull() ?: 0,
                     commitmentStr.toIntOrNull() ?: 0
                 ),
-                hasSavedCommitment,
-                streakDays
+                streakDays,
+                Unit
             )
         }
 
@@ -108,13 +101,12 @@ class DashboardViewModel @Inject constructor(
             preferenceInputs,
             tetherRepository.observeDailyExpenseSpent(startOfToday, endOfToday)
         ) { prefs, dailyExpenseSpentNullable ->
-            val (numbers, hasSavedCommitment, streakDays) = prefs
+            val (numbers, streakDays, _) = prefs
             val (balance, goal, monthlyCommitment) = numbers
             BaseInputs(
                 balance = balance,
                 goal = goal,
                 monthlyCommitment = monthlyCommitment,
-                hasSavedCommitment = hasSavedCommitment,
                 streakDays = streakDays,
                 dailyExpenseSpent = dailyExpenseSpentNullable ?: 0
             )

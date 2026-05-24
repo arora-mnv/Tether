@@ -22,7 +22,7 @@ class CloudTransactionDataSource @Inject constructor(
     private val authManager: FirebaseAuthManager
 ) : TransactionDataSource {
 
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+    private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
 
     private fun userDoc(uid: String) = firestore.collection("users").document(uid)
 

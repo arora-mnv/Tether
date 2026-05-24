@@ -7,6 +7,7 @@ import com.anantva.tether.data.local.dao.GoalDao
 import com.anantva.tether.data.local.dao.MerchantPatternDao
 import com.anantva.tether.data.local.dao.UserProfileDao
 import com.anantva.tether.data.local.entity.TransactionEntity
+import com.anantva.tether.data.local.entity.GoalContributionEntity
 import com.anantva.tether.data.local.entity.UserProfileEntity
 import com.anantva.tether.data.local.UserPreferencesRepository
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,7 +41,10 @@ class SyncManager @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository
 ) {
 
+    private val syncMutex = Mutex()
+
     fun syncAll(uid: String): Flow<SyncResult> = flow {
+        syncMutex.withLock {
         if (uid.isEmpty()) {
             emit(SyncResult.Error("User not signed in"))
             return@flow
@@ -92,6 +98,7 @@ class SyncManager @Inject constructor(
 
         Log.d(SYNC_TAG, "Full sync completed for uid=$uid")
         emit(SyncResult.Done("All data synced successfully"))
+        }
     }.flowOn(Dispatchers.IO)
 
     // ── Transaction Sync ──
@@ -291,7 +298,8 @@ class SyncManager @Inject constructor(
         }
 
         firestoreRepository.savePreferencesMap(uid, merged)
-        preferencesRepository.applyMap(merged)
+        val localOnly = merged - "isCloudStorage"
+        preferencesRepository.applyMap(localOnly)
 
         Log.d(SYNC_TAG, "Preferences sync complete${if (hasChanges) " with changes" else ""}")
     }
@@ -301,6 +309,9 @@ class SyncManager @Inject constructor(
 
     fun observeGoalsLive(uid: String): Flow<List<com.anantva.tether.data.local.entity.GoalEntity>> =
         firestoreRepository.observeGoals(uid)
+
+    fun observeGoalContributionsLive(uid: String, goalId: Int): Flow<List<GoalContributionEntity>> =
+        firestoreRepository.observeGoalContributions(uid, goalId)
 
     fun observePreferencesLive(uid: String): Flow<Map<String, Any>?> =
         firestoreRepository.observePreferencesMap(uid)

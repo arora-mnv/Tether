@@ -22,7 +22,7 @@ private const val TAG = "TetherFirestore"
 
 @Singleton
 class FirestoreRepository @Inject constructor() {
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+    private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
 
     private fun userTransactionsRef(userId: String) =
         firestore.collection("users").document(userId).collection("transactions")
@@ -276,6 +276,31 @@ class FirestoreRepository @Inject constructor() {
             Log.e(TAG, "getGoalContributions error for userId=$userId goalId=$goalId", e)
             emptyList()
         }
+    }
+
+    fun observeGoalContributions(userId: String, goalId: Int): Flow<List<GoalContributionEntity>> = callbackFlow {
+        val registration = userGoalsRef(userId)
+            .document(goalId.toString())
+            .collection("contributions")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    val msg = error.message ?: ""
+                    if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("offline", ignoreCase = true)) {
+                        Log.e(TAG, "Firestore error: $msg")
+                    } else {
+                        Log.e(TAG, "observeGoalContributions error for uid=$userId goalId=$goalId: $msg", error)
+                    }
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val contributions = snapshot?.documents?.mapNotNull { doc ->
+                    runCatching { GoalContributionEntity.fromMap(doc.data ?: emptyMap()) }
+                        .onFailure { e -> Log.e("FirestoreParse", "Failed to parse contribution doc ${doc.id}", e) }
+                        .getOrNull()
+                }.orEmpty()
+                trySend(contributions)
+            }
+        awaitClose { registration.remove() }
     }
 
     // ── Preference methods (DataStore → Firestore map) ──

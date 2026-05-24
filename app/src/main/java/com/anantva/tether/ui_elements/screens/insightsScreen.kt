@@ -12,6 +12,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,8 +38,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
-
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -242,20 +240,9 @@ fun InsightsScreen(
     spendTrendValues: List<Int>,
     trendLabels: List<String>,
     uiState: DashboardUiState,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    onPersonalityClick: () -> Unit = {}
 ) {
-    if (insightsState.isLoading) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator(color = TetherRed)
-        }
-        return
-    }
-
     val hasData = insightsState.weeklyTotalSpend > 0 || insightsState.dailyTotalSpend > 0
 
     LazyColumn(
@@ -268,7 +255,7 @@ fun InsightsScreen(
     ) {
         item { Spacer(Modifier.height(4.dp)) }
 
-        item { HeroInsightCard(insightsState = insightsState, streakDays = uiState.streakDays) }
+        item { HeroInsightCard(insightsState = insightsState, streakDays = uiState.streakDays, onPersonalityClick = onPersonalityClick) }
 
         if (hasData) {
             val usagePercent = if (uiState.dailyLimit > 0) {
@@ -407,7 +394,7 @@ private fun rememberContinuousPhase(speed: Float): Float {
 }
 
 @Composable
-private fun HeroInsightCard(insightsState: InsightsUiState, streakDays: Int = 0) {
+private fun HeroInsightCard(insightsState: InsightsUiState, streakDays: Int = 0, onPersonalityClick: () -> Unit = {}) {
     val profileMorph = insightsState.personalityWaveformSharpness
     val profileSpeed = insightsState.personalityWaveformSpeed
     val morph = profileMorph
@@ -423,6 +410,7 @@ private fun HeroInsightCard(insightsState: InsightsUiState, streakDays: Int = 0)
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onPersonalityClick)
             .background(
                 Brush.linearGradient(
                     colors = listOf(
@@ -1091,3 +1079,5 @@ fun GoalProgressCard(
         }
     }
 }
+
+

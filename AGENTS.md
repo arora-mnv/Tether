@@ -35,7 +35,7 @@
 - Don't assume naming convention from class name alone; check the actual filename.
 
 ## Runtime Flow
-- `MainActivity`: `installSplashScreen` (min 3s delay enforced via `LaunchedEffect`), reads DataStore flags → navigates: `onboarding` → `setup` → `dashboard`.
+- `MainActivity`: no `installSplashScreen()`, no `Theme.SplashScreen`. Pure black `android:windowBackground` on launch theme (`Theme.Tether.Splash`), custom Compose splash overlay (`SplashScreen` + `SplashViewModel`), reads DataStore flags → navigates: `onboarding` → `setup` → `dashboard`.
 - Dashboard redirects to `auth` when `isCloudSyncEnabled && !isLoggedIn`; auth flow includes `nameInput` screen.
 - Preferences in DataStore `tether_prefs` (`DataStoreModule` + `UserPreferencesRepository`).
 - `SyncOrchestrator` started in `TetherApplication.onCreate()`, not coordinated by `MainActivity`.

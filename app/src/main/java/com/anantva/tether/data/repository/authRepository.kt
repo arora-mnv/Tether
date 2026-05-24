@@ -19,7 +19,7 @@ data class AuthResult(
 class AuthRepository @Inject constructor(
     private val authManager: FirebaseAuthManager
 ) {
-    private val auth = FirebaseAuth.getInstance()
+    private val auth by lazy { FirebaseAuth.getInstance() }
 
     suspend fun signUp(email: String, password: String): AuthResult {
         return try {
